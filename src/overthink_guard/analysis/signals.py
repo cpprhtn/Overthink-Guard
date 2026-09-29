@@ -20,7 +20,7 @@ def extract_boxed(text: str) -> list[tuple[int, str]]:
             depth += {"{": 1, "}": -1}.get(text[i], 0)
             i += 1
         if depth == 0:
-            found.append((start, text[start + len(_BOXED): i - 1]))
+            found.append((start, text[start + len(_BOXED) : i - 1]))
         start = text.find(_BOXED, i)
     return found
 
@@ -61,7 +61,7 @@ def novelty(new: str, context: str) -> float:
     new_bytes = new.encode("utf-8")
     if not new_bytes:
         return 0.0
-    context_bytes = context.encode("utf-8")[-max(0, _ZLIB_WINDOW - len(new_bytes)):]
+    context_bytes = context.encode("utf-8")[-max(0, _ZLIB_WINDOW - len(new_bytes)) :]
     alone = _deflate_size(new_bytes)
     added = _deflate_size(context_bytes + new_bytes) - _deflate_size(context_bytes)
     return max(0.0, min(1.0, added / alone))

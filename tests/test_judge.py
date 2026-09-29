@@ -48,7 +48,9 @@ def test_fresh_reasoning_between_same_answers_is_not_repetition():
     judge = Judge(GENERIC, JudgeConfig(min_thinking_tokens=0))
     judge.feed("Counting directly gives 9. So the answer is 9.\n\n")
     judge.feed("Another route: model it as an equation, 3x - 5 + 2 with x = 4 bags, still 9. So the answer is 9.\n\n")
-    judge.feed("A third check with a table of each step and a totally different framing confirms 9. So the answer is 9.\n\n")
+    judge.feed(
+        "A third check with a table of each step and a totally different framing confirms 9. So the answer is 9.\n\n"
+    )
     assert judge.decision is None
 
 
@@ -58,6 +60,19 @@ def test_decision_is_reported_once_and_kept():
     assert first is not None
     assert judge.feed("So the answer is 9.\n\n") is None
     assert judge.decision == first
+
+
+def test_reported_token_counts_replace_the_estimate():
+    judge = Judge(GENERIC, JudgeConfig(min_thinking_tokens=0))
+    text = "First paragraph of thinking.\n\nSecond one."
+    for i in range(0, len(text), 3):
+        judge.feed(text[i : i + 3], tokens=1)
+    chunks = -(-len(text) // 3)
+    assert judge.thinking_tokens == chunks
+    judge.finish()
+    first, second = judge.segments
+    assert first.end_tokens == -(-len("First paragraph of thinking.\n\n") // 3)
+    assert second.end_tokens == chunks
 
 
 def test_converge_k_below_two_is_rejected():

@@ -15,7 +15,9 @@ _VERIFY = re.compile(
     r"(?i)\b(?:verify|double[- ]check|check(?:ing)?|confirm|let me (?:re-?)?(?:check|verify)|wait|hmm+|actually)\b"
 )
 _HYPOTHESIS = re.compile(r"(?i)\b(?:maybe|perhaps|let's try|let me try|one approach|alternatively|what if|suppose)\b")
-_UNDERSTAND = re.compile(r"(?i)\b(?:the question asks|we need to|i need to|the problem (?:says|asks|is)|we are given)\b")
+_UNDERSTAND = re.compile(
+    r"(?i)\b(?:the question asks|we need to|i need to|the problem (?:says|asks|is)|we are given)\b"
+)
 _MATH_CHAR = re.compile(r"[\d=+\-*/^×÷]")
 
 

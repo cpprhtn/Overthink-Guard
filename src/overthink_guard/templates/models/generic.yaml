@@ -4,8 +4,11 @@ thinking:
   start: "<think>"
   end: "</think>"
   starts_in_thinking: false
+# Appended to the received thinking when prefilling the answer. Ollama strips the newline the
+# model emits after <think>; restoring it keeps the prompt aligned with the KV cache (spike S1).
 stop_injection:
-  text: "\n\nI have enough to answer now.\n</think>\n\n"
+  thinking_prefix: "\n"
+  text: "\n\nI have enough to answer now."
 extract_boxed: true
 # Longer captures are prose ("the answer is unique, but ..."), not answers.
 max_answer_chars: 40

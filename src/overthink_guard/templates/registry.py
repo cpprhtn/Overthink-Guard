@@ -16,6 +16,7 @@ class Template:
     think_start: str
     think_end: str
     starts_in_thinking: bool
+    stop_thinking_prefix: str
     stop_injection_text: str
     extract_boxed: bool
     max_answer_chars: int
@@ -31,6 +32,7 @@ def _build(raw: dict) -> Template:
         think_start=thinking["start"],
         think_end=thinking["end"],
         starts_in_thinking=bool(thinking.get("starts_in_thinking", False)),
+        stop_thinking_prefix=raw["stop_injection"].get("thinking_prefix", ""),
         stop_injection_text=raw["stop_injection"]["text"],
         extract_boxed=bool(raw.get("extract_boxed", False)),
         max_answer_chars=int(raw.get("max_answer_chars", 40)),
@@ -59,7 +61,8 @@ def _load_all() -> dict[str, Template]:
 def get_template(template_id: str) -> Template:
     templates = _load_all()
     if template_id not in templates:
-        raise KeyError(f"unknown template {template_id!r}; available: {', '.join(sorted(templates))}")
+        available = ", ".join(sorted(templates))
+        raise KeyError(f"unknown template {template_id!r}; available: {available}")
     return templates[template_id]
 
 

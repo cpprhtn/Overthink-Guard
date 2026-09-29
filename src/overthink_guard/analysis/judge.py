@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass, field
 
 from overthink_guard.analysis import rules
@@ -57,13 +58,18 @@ class Judge:
         self._text = ""
         self._tokens = 0
         self._last_revision_tokens: int | None = None
+        self._mark_chars: list[int] = []
+        self._mark_tokens: list[int] = []
 
     @property
     def thinking_tokens(self) -> int:
-        return self._tokens
+        return self._mark_tokens[-1] if self._mark_tokens else self._tokens
 
-    def feed(self, thinking: str) -> StopDecision | None:
-        """Returns the decision on the call where stopping first becomes allowed."""
+    def feed(self, thinking: str, tokens: int | None = None) -> StopDecision | None:
+        """Returns the decision when stopping first becomes allowed; tokens overrides the text-based estimate."""
+        if tokens is not None:
+            self._mark_chars.append((self._mark_chars[-1] if self._mark_chars else 0) + len(thinking))
+            self._mark_tokens.append(self.thinking_tokens + tokens)
         for segment in self._segmenter.feed(thinking):
             if self._add(segment):
                 return self.decision
@@ -78,14 +84,19 @@ class Judge:
         previous = next((s.answer for s in reversed(self.segments) if s.answer is not None), None)
         revised = has_revision(text, self.template) or (answer is not None and previous not in (None, answer))
         seg_novelty = novelty(text, self._text)
-        tokens = estimate_tokens(text)
+        end_char = len(self._text) + len(text)
+        if self._mark_chars:
+            mark = min(bisect_left(self._mark_chars, end_char), len(self._mark_chars) - 1)
+            end_tokens = self._mark_tokens[mark]
+        else:
+            end_tokens = self._tokens + estimate_tokens(text)
         segment = Segment(
             index=len(self.segments),
             text=text,
             start_char=len(self._text),
-            end_char=len(self._text) + len(text),
+            end_char=end_char,
             start_tokens=self._tokens,
-            end_tokens=self._tokens + tokens,
+            end_tokens=end_tokens,
             phase=rules.classify(
                 text,
                 index=len(self.segments),
@@ -99,7 +110,7 @@ class Judge:
         )
         self.segments.append(segment)
         self._text += text
-        self._tokens += tokens
+        self._tokens = end_tokens
         if revised:
             self._last_revision_tokens = self._tokens
         if self.decision is None:
@@ -111,13 +122,16 @@ class Judge:
         cfg = self.config
         if self._tokens < cfg.min_thinking_tokens:
             return None
-        if self._last_revision_tokens is not None and self._tokens - self._last_revision_tokens < cfg.revision_cooldown_tokens:
+        if (
+            self._last_revision_tokens is not None
+            and self._tokens - self._last_revision_tokens < cfg.revision_cooldown_tokens
+        ):
             return None
-        answered = [s for s in self.segments if s.answer is not None][-cfg.converge_k:]
+        answered = [s for s in self.segments if s.answer is not None][-cfg.converge_k :]
         if len(answered) < cfg.converge_k or len({s.answer for s in answered}) != 1:
             return None
         first = answered[0]
-        span_novelty = novelty(self._text[first.end_char:], self._text[: first.end_char])
+        span_novelty = novelty(self._text[first.end_char :], self._text[: first.end_char])
         if span_novelty > cfg.repetition_threshold:
             return None
         return StopDecision(

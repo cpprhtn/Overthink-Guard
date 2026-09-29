@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overthink Guard</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
+    --accent: #2f5bd3; --warn-bg: #fff4d6; --warn-text: #6b4b00;
+    --understand: #9aa5b1; --hypothesis: #8e7cc3; --compute: #4f8fce; --verify: #3fa37a;
+    --conclusion: #e0a526; --revision: #d9534f; --repeat: #b7b0a2; --other: #c9ced6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1f1d; --text: #ececea; --muted: #9a9a94; --line: #33332f;
+      --accent: #7ea2ff; --warn-bg: #3a2f12; --warn-text: #f2d48a;
+      --repeat: #6f6a60; --other: #4a4f57;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; }
+  header .conn { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; min-height: calc(100vh - 52px); }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } #list { max-height: 30vh; } }
+  #list { border-right: 1px solid var(--line); overflow-y: auto; }
+  .item { padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .item.active { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+  .item .prompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .meta { color: var(--muted); font-size: 12px; }
+  #detail { padding: 16px; min-width: 0; }
+  .empty { color: var(--muted); padding: 32px 16px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+  .badge.thinking { border-color: var(--accent); color: var(--accent); }
+  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  .suggest { background: var(--warn-bg); color: var(--warn-text); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+  .timeline { display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: var(--line); margin-bottom: 8px; }
+  .timeline div { min-width: 3px; border-right: 1px solid var(--panel); cursor: pointer; }
+  .timeline div.sel { outline: 2px solid var(--text); outline-offset: -2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; background: var(--c); vertical-align: -1px; }
+  .answers { font-size: 13px; color: var(--muted); margin-bottom: 12px; overflow-wrap: anywhere; }
+  .answers b { color: var(--text); font-weight: 600; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 0; max-height: 45vh; overflow-y: auto; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<header><h1>Overthink Guard</h1><span class="conn" id="conn">connecting…</span></header>
+<main>
+  <nav id="list"><div class="empty">No requests yet. Point your client's base URL at this proxy.</div></nav>
+  <section id="detail"><div class="empty">Select a request.</div></section>
+</main>
+<script>
+const PHASES = ["understand", "hypothesis", "compute", "verify", "conclusion", "revision", "repeat", "other"];
+const sessions = new Map();
+let selected = null;
+let selectedSegment = null;
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "style") node.style.cssText = v; else if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const child of children) node.append(child);
+  return node;
+}
+
+function renderList() {
+  const list = document.getElementById("list");
+  const items = [...sessions.values()].sort((a, b) => b.created - a.created);
+  if (!items.length) return;
+  list.replaceChildren(...items.map(s => el("div", {
+    class: "item" + (s.id === selected ? " active" : ""),
+    onclick: () => { selected = s.id; selectedSegment = null; render(); },
+  }, el("div", { class: "prompt" }, s.prompt), el("div", { class: "meta" },
+    `${s.model} · ${s.status}${s.intervened ? " · stopped early" : ""} · ~${s.thinking_tokens} thinking tokens`))));
+}
+
+function renderDetail() {
+  const detail = document.getElementById("detail");
+  const s = sessions.get(selected);
+  if (!s) return;
+  const total = Math.max(1, ...s.segments.map(g => g.end_tokens));
+  const stopBtn = el("button", { onclick: () => stopNow(s.id) }, "Answer now");
+  stopBtn.disabled = s.status !== "thinking";
+  const parts = [
+    el("div", { class: "row" },
+      el("span", { class: "badge " + s.status }, s.status),
+      el("span", {}, `~${s.thinking_tokens} thinking tokens`),
+      s.intervened ? el("span", { class: "badge" }, "stopped early") : "",
+      stopBtn),
+  ];
+  if (s.suggestion && s.status === "thinking") {
+    parts.push(el("div", { class: "suggest" },
+      `Looks safe to stop: the tentative answer "${s.suggestion.answer}" has repeated and the reasoning is going in circles.`));
+  }
+  parts.push(el("div", { class: "timeline" }, ...s.segments.map(g => el("div", {
+    title: `${g.phase} · ${g.start_tokens}–${g.end_tokens} tokens${g.answer ? " · answer " + g.answer : ""}`,
+    class: g.index === selectedSegment ? "sel" : "",
+    style: `flex: ${Math.max(1, g.end_tokens - g.start_tokens)} 0 0; background: var(--${g.phase})`,
+    onclick: () => { selectedSegment = g.index; render(); },
+  }))));
+  parts.push(el("div", { class: "legend" }, ...PHASES.map(p => el("span", { style: `--c: var(--${p})` }, p))));
+  const answers = s.segments.filter(g => g.answer);
+  if (answers.length) {
+    const trail = el("div", { class: "answers" }, "Tentative answers: ");
+    answers.forEach((g, i) => trail.append(i ? " → " : "", el("b", {}, g.answer), ` @${g.end_tokens}`));
+    parts.push(trail);
+  }
+  const seg = s.segments.find(g => g.index === selectedSegment) || s.segments[s.segments.length - 1];
+  parts.push(el("pre", {}, seg ? `[${seg.phase}] ${seg.text.trim()}` : "Waiting for thinking…"));
+  parts.unshift(el("div", { class: "row" }, el("strong", {}, s.prompt)));
+  detail.replaceChildren(...parts);
+}
+
+function render() { renderList(); renderDetail(); }
+
+async function stopNow(id) {
+  await fetch(`/otg/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+}
+
+function connect() {
+  const source = new EventSource("/otg/api/events");
+  const conn = document.getElementById("conn");
+  source.onopen = () => { conn.textContent = "live"; };
+  source.onerror = () => { conn.textContent = "reconnecting…"; };
+  source.onmessage = (msg) => {
+    const ev = JSON.parse(msg.data);
+    if (ev.type === "session") {
+      const prev = sessions.get(ev.id);
+      sessions.set(ev.id, { ...ev, segments: prev ? prev.segments : [] });
+      if (selected === null) selected = ev.id;
+    } else if (ev.type === "segment") {
+      const s = sessions.get(ev.session);
+      if (s && !s.segments.some(g => g.index === ev.index)) s.segments.push(ev);
+    }
+    render();
+  };
+}
+connect();
+</script>
+</body>
+</html>

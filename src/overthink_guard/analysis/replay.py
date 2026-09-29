@@ -35,7 +35,7 @@ def replay(completion: str, template: Template, config: JudgeConfig, chunk_size:
     parser = ThinkStreamParser(template.think_start, template.think_end, starts_in_thinking)
     judge = Judge(template, config)
     answer_text = ""
-    chunks = [completion[i: i + chunk_size] for i in range(0, len(completion), chunk_size)]
+    chunks = [completion[i : i + chunk_size] for i in range(0, len(completion), chunk_size)]
     for events in [*(parser.feed(c) for c in chunks), parser.finish()]:
         for event in events:
             if event.kind == "thinking":

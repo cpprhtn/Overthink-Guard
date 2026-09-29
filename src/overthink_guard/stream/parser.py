@@ -51,12 +51,12 @@ class ThinkStreamParser:
                 emit = self._buffer[: len(self._buffer) - keep]
                 if emit:
                     events.append(StreamEvent(kind, emit))
-                self._buffer = self._buffer[len(emit):]
+                self._buffer = self._buffer[len(emit) :]
                 return events
 
             if index:
                 events.append(StreamEvent(kind, self._buffer[:index]))
-            self._buffer = self._buffer[index + len(tag):]
+            self._buffer = self._buffer[index + len(tag) :]
             if self._state == "before":
                 self._state = "thinking"
             else:

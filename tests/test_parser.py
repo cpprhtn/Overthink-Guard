@@ -6,7 +6,7 @@ from overthink_guard.stream import StreamEvent, ThinkStreamParser
 def run(parser: ThinkStreamParser, text: str, chunk_size: int) -> list[StreamEvent]:
     events = []
     for i in range(0, len(text), chunk_size):
-        events.extend(parser.feed(text[i: i + chunk_size]))
+        events.extend(parser.feed(text[i : i + chunk_size]))
     events.extend(parser.finish())
     return events
 

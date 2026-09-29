@@ -43,7 +43,24 @@ Ollama의 qwen3 템플릿은 **마지막 메시지가 assistant이면 턴을 닫
 | `"\n"` + 받은 것 | 800 | 790 | 48ms |
 | raw `<think>\n` + 받은 것 (` /think` 누락) | 770 | 16 | 764ms |
 
-이 `"\n"` 보정은 모델·템플릿마다 다를 수 있으므로 템플릿 YAML의 필드로 두어야 한다 (컨트롤러 구현 시 추가).
+이 `"\n"` 보정은 모델·템플릿마다 다를 수 있으므로 템플릿 YAML의 `stop_injection.thinking_prefix` 필드로 두었다.
+
+**프록시가 쓰는 조합 (A')**: 원래 요청은 `think`를 지정하지 않고 클라이언트 요청 그대로 보내고, 끊은 뒤의 prefill에만 `think: true`를 붙인다. `think`를 지정하면 템플릿이 사용자 메시지에 ` /think`를 붙이지만, 이 조합에서도 캐시는 826개 중 816개가 적중했다. 대안인 "`think` 없이 assistant `content`에 `<think>\n…</think>\n\n`을 직접 넣기"도 동작했다(814개 중 804개 적중, 출력은 `content`로 분류됨). 하지만 태그 문자열에 의존하므로 채택하지 않았다.
+
+### 토큰 수
+
+Ollama 네이티브 스트림은 **청크 하나에 토큰 하나**다(S8에서 청크마다 logprob 항목이 1개). 프록시는 청크 수를 실제 토큰 수로 쓴다. 실측에서 UI 표시 964, `eval_count` − 답변 청크 = 970이었다. 반면 텍스트 추정(ASCII 4자당 1토큰)은 Qwen의 수학 thinking(약 2.3자당 1토큰)을 **약 1.7배 적게 센다**. 오프라인 `otg analyze`와 `bench/r1_replay.py`의 절대 토큰 수(`min_thinking_tokens` 같은 임계값 비교 포함)는 이만큼 부정확할 수 있다. 비율(절감률)은 영향이 작다.
+
+### 프록시 end-to-end (`otg start`, OpenAI Python 클라이언트, base_url만 교체)
+
+| 시나리오 | 결과 |
+| --- | --- |
+| 개입 없음 | reasoning·content 정상 수신, 정답, usage는 Ollama 값 그대로 |
+| thinking 300청크 뒤 "Answer now" | 누른 뒤 **0.09초** 만에 첫 답변 토큰, 캐시 337개 중 327개 적중, 정답. 생성 토큰 809개 (개입 없을 때 3,193개) |
+| `/v1/models`, `/api/tags` 통과 | 정상 |
+| `Host: evil.example`, `Origin: https://evil.example` | 403 |
+
+끊긴 요청은 Ollama가 `prompt_eval_count`를 주지 않는다. 그래서 개입한 응답의 `usage.prompt_tokens`는 "답변 요청의 prompt − 끊기 전 생성 토큰"으로 추정한다(실측 35, 실제 23). 차이는 주입 문구 토큰 때문이다.
 
 ## S8. 스트리밍 logprob과 종료 토큰 마진 (Tier 1)
 

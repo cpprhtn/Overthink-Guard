@@ -21,7 +21,8 @@ ROWS_URL = (
     "&config=default&split=train&offset={offset}&length=100"
 )
 LOOSE_NUMERIC = re.compile(
-    r"(?i)\b(?:so|thus|therefore|hence|total|we get|gives|equals)\b[^.\n]*?(?P<ans>-?\d+(?:\.\d+)?)\s*(?:\.(?:\s|$)|\n|$)"
+    r"(?i)\b(?:so|thus|therefore|hence|total|we get|gives|equals)\b[^.\n]*?"
+    r"(?P<ans>-?\d+(?:\.\d+)?)\s*(?:\.(?:\s|$)|\n|$)"
 )
 
 
@@ -126,7 +127,10 @@ def main() -> None:
     print(f"\n{'extractor':9} {'config':12} {'stopped':>8} {'saved':>7} {'agree':>6} {'disagree':>9} {'risk':>6}")
     for tname, template, cname, config in runs:
         r = evaluate(traces, template, config)
-        print(f"{tname:9} {cname:12} {r['stopped']:8.0%} {r['saved']:7.1%} {r['agree']:6} {r['disagree']:9} {r['risk']:6.1%}")
+        print(
+            f"{tname:9} {cname:12} {r['stopped']:8.0%} {r['saved']:7.1%} "
+            f"{r['agree']:6} {r['disagree']:9} {r['risk']:6.1%}"
+        )
 
 
 if __name__ == "__main__":

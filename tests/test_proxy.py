@@ -1,0 +1,236 @@
+import json
+
+import httpx
+import pytest
+from starlette.testclient import TestClient
+
+from overthink_guard.backends import to_native_chat
+from overthink_guard.proxy import create_app
+
+BASE = "http://127.0.0.1:8484"
+QUESTION = "What is 17*24?"
+THINKING = ["Okay, ", "17 times 24. ", "So the answer is 408.\n\n", "Wait, let me check ", "again. ", "17*24 = 408."]
+
+
+def ndjson(*chunks: dict) -> bytes:
+    return b"".join(json.dumps(c).encode() + b"\n" for c in chunks)
+
+
+def thinking_chunk(text: str) -> dict:
+    return {"message": {"role": "assistant", "content": "", "thinking": text}, "done": False}
+
+
+def content_chunk(text: str) -> dict:
+    return {"message": {"role": "assistant", "content": text}, "done": False}
+
+
+DONE = {
+    "message": {"role": "assistant", "content": ""},
+    "done": True,
+    "done_reason": "stop",
+    "prompt_eval_count": 20,
+    "prompt_eval_cached_count": 0,
+    "eval_count": 9,
+}
+
+
+class FakeOllama:
+    """Upstream double: records requests; /api/chat thinks, then answers unless told to stop."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.app = None
+        self.stop_after: int | None = None
+        self.native_status = 200
+
+    def bodies(self, path: str) -> list[dict]:
+        return [json.loads(r.content) for r in self.requests if r.url.path == path]
+
+    async def handler(self, request: httpx.Request) -> httpx.Response:
+        await request.aread()
+        self.requests.append(request)
+        if request.url.path != "/api/chat":
+            echo = b'{"echo": ' + (request.content or b"null") + b"}"
+            return httpx.Response(
+                201, headers={"x-upstream": "yes", "content-type": "application/json"}, stream=httpx.ByteStream(echo)
+            )
+        if self.native_status != 200:
+            return httpx.Response(self.native_status, stream=httpx.ByteStream(b'{"error": "think not supported"}'))
+        body = json.loads(request.content)
+        if body.get("think") and body["messages"][-1]["role"] == "assistant":
+            answer = ndjson(
+                content_chunk("The answer is "),
+                content_chunk("408."),
+                {**DONE, "prompt_eval_count": 60, "prompt_eval_cached_count": 55, "eval_count": 4},
+            )
+            return httpx.Response(200, content=answer)
+
+        async def stream():
+            for i, text in enumerate(THINKING):
+                if self.stop_after is not None and i == self.stop_after:
+                    self.app.state.hub.request_stop("1")
+                yield ndjson(thinking_chunk(text))
+            yield ndjson(content_chunk("408"), DONE)
+
+        return httpx.Response(200, content=stream())
+
+
+@pytest.fixture
+def fake():
+    return FakeOllama()
+
+
+@pytest.fixture
+def client(fake):
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(fake.handler))
+    app = create_app("http://ollama.test", client=upstream)
+    fake.app = app
+    with TestClient(app, base_url=BASE) as test_client:
+        yield test_client
+
+
+def sse_events(text: str) -> list:
+    return [
+        json.loads(line[6:]) if line != "data: [DONE]" else "[DONE]"
+        for line in text.splitlines()
+        if line.startswith("data: ")
+    ]
+
+
+def chat(client: TestClient, **extra) -> httpx.Response:
+    body = {"model": "qwen3:1.7b", "messages": [{"role": "user", "content": QUESTION}], "stream": True, **extra}
+    return client.post("/v1/chat/completions", json=body)
+
+
+def test_streams_reasoning_then_content_and_marks_no_intervention(client, fake):
+    resp = chat(client, stream_options={"include_usage": True})
+    events = sse_events(resp.text)
+    deltas = [e["choices"][0]["delta"] for e in events[:-3]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING)
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+    assert events[-3]["choices"][0]["finish_reason"] == "stop"
+    assert events[-3]["otg"] == {"session": "1", "intervened": False}
+    assert events[-2]["usage"] == {"prompt_tokens": 20, "completion_tokens": 9, "total_tokens": 29}
+    assert events[-1] == "[DONE]"
+    assert resp.headers["x-otg-session"] == "1"
+    assert "think" not in fake.bodies("/api/chat")[0]
+    assert fake.app.state.hub.get("1").status == "done"
+
+
+def test_answer_now_aborts_thinking_and_splices_prefilled_answer(client, fake):
+    fake.stop_after = 3
+    events = sse_events(chat(client, max_tokens=100).text)
+    deltas = [e["choices"][0]["delta"] for e in events[:-2]]
+    received = "".join(d.get("reasoning", "") for d in deltas)
+    assert received == "".join(THINKING[:4])
+    assert "".join(d.get("content", "") for d in deltas) == "The answer is 408."
+
+    prefill = fake.bodies("/api/chat")[1]
+    assert prefill["think"] is True
+    assert prefill["messages"][-1] == {
+        "role": "assistant",
+        "content": "",
+        "thinking": "\n" + received.rstrip() + "\n\nI have enough to answer now.",
+    }
+    assert prefill["options"]["num_predict"] == 100 - 4
+    otg = events[-2]["otg"]
+    assert otg["intervened"] is True
+    assert otg["stopped_after_tokens"] == 4
+    assert otg["answer_prompt_cached_tokens"] == 55
+    assert fake.app.state.hub.get("1").intervened
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"tools": [{"type": "function", "function": {"name": "f", "parameters": {}}}]},
+        {"stream": False},
+        {"response_format": {"type": "json_object"}},
+    ],
+)
+def test_requests_we_do_not_understand_pass_through_byte_for_byte(client, fake, extra):
+    body = json.dumps(
+        {"model": "qwen3:1.7b", "messages": [{"role": "user", "content": "hi"}], "stream": True, **extra},
+        separators=(",", ":"),
+    ).encode()
+    resp = client.post("/v1/chat/completions?x=1", content=body, headers={"content-type": "application/json"})
+    upstream = fake.requests[-1]
+    assert upstream.url.path == "/v1/chat/completions" and upstream.url.query == b"x=1"
+    assert upstream.content == body
+    assert resp.status_code == 201
+    assert resp.headers["x-upstream"] == "yes"
+    assert resp.content == b'{"echo": ' + body + b"}"
+
+
+def test_other_paths_pass_through(client, fake):
+    assert client.get("/api/tags").status_code == 201
+    assert client.get("/").status_code == 201
+    assert [r.url.path for r in fake.requests] == ["/api/tags", "/"]
+
+
+def test_backend_rejecting_native_request_falls_back_to_passthrough(client, fake):
+    fake.native_status = 400
+    resp = chat(client)
+    assert resp.status_code == 201
+    assert [r.url.path for r in fake.requests] == ["/api/chat", "/v1/chat/completions"]
+
+
+@pytest.mark.parametrize(
+    ("headers", "status"),
+    [
+        ({"host": "evil.example:8484"}, 403),
+        ({"origin": "https://evil.example"}, 403),
+        ({"origin": "null"}, 403),
+        ({"origin": "http://localhost:3000"}, 201),
+        ({"host": "localhost:8484"}, 201),
+    ],
+)
+def test_only_local_hosts_and_origins_are_served(client, headers, status):
+    assert client.get("/api/tags", headers=headers).status_code == status
+
+
+def test_stop_unknown_session_is_rejected(client):
+    assert client.post("/otg/api/sessions/nope/stop").status_code == 409
+
+
+def test_ui_is_served_without_external_assets(client):
+    page = client.get("/ui").text
+    assert "Overthink Guard" in page
+    assert "http://" not in page and "https://" not in page
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "messages": [
+                {"role": "user", "content": "q"},
+                {"role": "assistant", "content": "a"},
+                {"role": "user", "content": "q2"},
+            ]
+        },
+        {"messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "x"}}]}]},
+        {"messages": [{"role": "user", "content": "q", "name": "bob"}]},
+        {"messages": [{"role": "user", "content": "q"}], "n": 2},
+        {"messages": [{"role": "user", "content": "q"}], "stream_options": {"other": 1}},
+        {"messages": [{"role": "user", "content": "q"}], "logprobs": True},
+    ],
+)
+def test_only_single_turn_text_is_intervened(body):
+    assert to_native_chat({"model": "m", "stream": True, **body}) is None
+
+
+def test_openai_options_map_to_ollama_options():
+    native = to_native_chat(
+        {
+            "model": "m",
+            "stream": True,
+            "messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "q"}],
+            "temperature": 0.2,
+            "max_tokens": 50,
+            "stop": "END",
+            "seed": 1,
+        }
+    )
+    assert native["options"] == {"temperature": 0.2, "num_predict": 50, "stop": ["END"], "seed": 1}
+    assert native["messages"][0] == {"role": "system", "content": "s"}

@@ -51,7 +51,9 @@ def _print_report(item: dict) -> None:
         return
     pct = item["saved_tokens_est"] / item["thinking_tokens_est"] * 100 if item["thinking_tokens_est"] else 0
     match = {True: "match", False: "MISMATCH", None: "unknown"}[item["answer_match"]]
-    print(f"  stop       segment {stop['segment']} @ ~{stop['at_tokens']:,} tokens, span novelty {stop['span_novelty']}")
+    print(
+        f"  stop       segment {stop['segment']} @ ~{stop['at_tokens']:,} tokens, span novelty {stop['span_novelty']}"
+    )
     print(f"  saved      ~{item['saved_tokens_est']:,} tokens ({pct:.0f}%)")
     print(f"  answer     at stop {stop['answer']!r} vs final {item['final_answer']!r}: {match}")
 
@@ -65,7 +67,9 @@ def _summary(items: list[dict]) -> dict:
         "thinking_tokens_est": thinking,
         "saved_tokens_est": saved,
         "saved_ratio": round(saved / thinking, 4) if thinking else 0.0,
-        "answer_match": dict(Counter({True: "match", False: "mismatch", None: "unknown"}[i["answer_match"]] for i in items if i["stop"])),
+        "answer_match": dict(
+            Counter({True: "match", False: "mismatch", None: "unknown"}[i["answer_match"]] for i in items if i["stop"])
+        ),
     }
 
 
@@ -92,7 +96,35 @@ def _analyze(args: argparse.Namespace) -> int:
         _print_report(item)
     if len(items) > 1:
         s = _summary(items)
-        print(f"== summary: {s['stopped']}/{s['files']} stopped, ~{s['saved_tokens_est']:,} of ~{s['thinking_tokens_est']:,} thinking tokens saved ({s['saved_ratio']:.0%}), answers {s['answer_match']}")
+        print(
+            f"== summary: {s['stopped']}/{s['files']} stopped, "
+            f"~{s['saved_tokens_est']:,} of ~{s['thinking_tokens_est']:,} thinking tokens saved "
+            f"({s['saved_ratio']:.0%}), answers {s['answer_match']}"
+        )
+    return 0
+
+
+def _start(args: argparse.Namespace) -> int:
+    import httpx
+    import uvicorn
+
+    from overthink_guard.proxy import create_app
+
+    try:
+        version = httpx.get(f"{args.backend_url.rstrip('/')}/api/version", timeout=3).json()["version"]
+        print(f"✓ Ollama {version} at {args.backend_url}")
+    except (httpx.HTTPError, ValueError, KeyError):
+        print(f"! Ollama not reachable at {args.backend_url} yet; requests will fail until it is up")
+    base = f"http://{args.host}:{args.port}"
+    print(f"→ proxy: {base}/v1   (set this as your client's base URL)")
+    print(f"→ UI:    {base}/ui")
+    print("→ mode:  watch (nothing is stopped unless you press 'Answer now')")
+    uvicorn.run(
+        create_app(args.backend_url, host=args.host, port=args.port),
+        host=args.host,
+        port=args.port,
+        log_level="warning",
+    )
     return 0
 
 
@@ -102,7 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     defaults = JudgeConfig()
-    analyze = sub.add_parser("analyze", help="replay recorded completions offline and report where auto-stop would fire")
+    analyze = sub.add_parser(
+        "analyze", help="replay recorded completions offline and report where auto-stop would fire"
+    )
     analyze.add_argument("files", nargs="+", help="completion text files ('-' for stdin)")
     analyze.add_argument("--template", default="generic", choices=template_ids())
     analyze.add_argument("--thinking-only", action="store_true", help="files contain only thinking text, no tags")
@@ -112,6 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--repetition-threshold", type=float, default=defaults.repetition_threshold)
     analyze.add_argument("--json", action="store_true", help="machine-readable output")
     analyze.set_defaults(func=_analyze)
+
+    start = sub.add_parser("start", help="run the local proxy and UI in front of Ollama")
+    start.add_argument("--host", default="127.0.0.1")
+    start.add_argument("--port", type=int, default=8484)
+    start.add_argument("--backend-url", default="http://localhost:11434")
+    start.set_defaults(func=_start)
     return parser
 
 
