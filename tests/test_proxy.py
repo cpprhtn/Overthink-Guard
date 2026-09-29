@@ -422,3 +422,29 @@ def test_raw_mode_probes_and_resumes_with_the_open_think_block(client, fake):
     assert resume["prompt"] == prompt + "<think>\n" + "".join(THINKING[:3])
     session = fake.app.state.hub.get("1")
     assert [(p.at_tokens, p.answer) for p in session.probes.probes] == [(3, "408")]
+
+
+AUTO_FAST = [{"auto": True, "probe_interval": 1, "probe_min_tokens": 0, "probe_converge_k": 2}]
+
+
+@pytest.mark.parametrize("app_kwargs", AUTO_FAST)
+def test_auto_mode_answers_once_probe_answers_agree(client, fake):
+    events = sse_events(chat(client).text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == THINKING[0] + RESUMED[0]
+    assert "".join(d.get("content", "") for d in deltas) == "The answer is 408."
+    otg = events[-2]["otg"]
+    assert (otg["intervened"], otg["auto"], otg["probes"]) == (True, True, 2)
+    session = fake.app.state.hub.get("1")
+    assert session.auto_stopped and session.shadow is None
+    stats = fake.app.state.hub.stats.summary()
+    assert (stats["auto_stops"], stats["requests"]) == (1, 0)
+
+
+@pytest.mark.parametrize("app_kwargs", AUTO_FAST)
+def test_auto_mode_leaves_unverified_models_alone(client, fake):
+    events = sse_events(chat(client, model="llama3.1:8b").text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+    session = fake.app.state.hub.get("1")
+    assert (session.auto_stopped, session.probe_skipped) == (False, "template")

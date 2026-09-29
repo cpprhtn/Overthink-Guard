@@ -28,6 +28,7 @@ class Session:
     thinking: str = ""
     answer: str = ""
     intervened: bool = False
+    auto_stopped: bool = False
     probes: ProbeTracker | None = None
     probe_skipped: str | None = None
     shadow: dict | None = None
@@ -122,6 +123,18 @@ class SessionHub:
         self._publish(self.summary(session))
         self._publish({"type": "stats", **self.stats.summary()})
 
+    def record_auto_stop(self, session: Session, elapsed_seconds: float) -> None:
+        """Counts an Auto stop; no Shadow comparison is possible because the run never finished its thinking."""
+        record = {
+            "ts": round(time.time()),
+            "model": session.model,
+            "thinking_tokens": session.judge.thinking_tokens,
+            "elapsed_seconds": round(elapsed_seconds, 3),
+            "auto_stopped": True,
+        }
+        self.stats.add(record)
+        self._publish({"type": "stats", **self.stats.summary()})
+
     def set_status(self, session: Session, status: str) -> None:
         if status in (ANSWERING, DONE, ERROR, CANCELLED):
             before = len(session.judge.segments)
@@ -149,6 +162,7 @@ class SessionHub:
             "status": session.status,
             "thinking_tokens": session.judge.thinking_tokens,
             "intervened": session.intervened,
+            "auto_stopped": session.auto_stopped,
             "can_intervene": session.judge.template.can_intervene,
             "suggestion": None
             if decision is None

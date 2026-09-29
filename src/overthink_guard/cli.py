@@ -9,7 +9,7 @@ from pathlib import Path
 from overthink_guard import __version__
 from overthink_guard.analysis import JudgeConfig, ReplayReport, replay
 from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
-from overthink_guard.config import ConfigError, Settings, default_config_path, load_settings
+from overthink_guard.config import MODES, ConfigError, Settings, default_config_path, load_settings
 from overthink_guard.templates import get_template, template_ids
 
 
@@ -115,6 +115,7 @@ def resolve_settings(args: argparse.Namespace) -> Settings:
         ("host", "host"),
         ("port", "port"),
         ("backend_url", "backend_url"),
+        ("mode", "mode"),
         ("probe", "probe"),
         ("probe_interval", "probe_interval"),
         ("probe_min_tokens", "probe_min_tokens"),
@@ -148,8 +149,14 @@ def _start(args: argparse.Namespace) -> int:
     base = f"http://{s.host}:{s.port}"
     print(f"→ proxy: {base}/v1   (set this as your client's base URL)")
     print(f"→ UI:    {base}/ui")
-    print("→ mode:  shadow (nothing is stopped unless you press 'Answer now'; would-stop points are recorded)")
-    if s.probe:
+    if s.mode == "auto":
+        print(
+            f"→ mode:  auto (runaway guard: once thinking passes {s.probe_min_tokens} tokens and "
+            f"{s.probe_converge_k} probes agree, it answers from the thinking so far)"
+        )
+    else:
+        print("→ mode:  shadow (nothing is stopped unless you press 'Answer now'; would-stop points are recorded)")
+    if s.probe or s.mode == "auto":
         print(
             f"→ probe: every {s.probe_interval} thinking tokens after the first {s.probe_min_tokens}, "
             f"k={s.probe_converge_k} (Tier 2, adds short pauses)"
@@ -162,6 +169,7 @@ def _start(args: argparse.Namespace) -> int:
         stats=ShadowStats(s.stats_file),
         judge_config=s.judge,
         probe=s.probe,
+        auto=s.mode == "auto",
         probe_interval=s.probe_interval,
         probe_min_tokens=s.probe_min_tokens,
         probe_converge_k=s.probe_converge_k,
@@ -196,6 +204,9 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--host", help="default 127.0.0.1")
     start.add_argument("--port", type=int, help="default 8484")
     start.add_argument("--backend-url", help="default http://localhost:11434")
+    start.add_argument(
+        "--mode", choices=MODES, help="shadow (default) records only; auto also stops runaway thinking (probing on)"
+    )
     start.add_argument(
         "--probe", action=argparse.BooleanOptionalAction, help="opt-in Tier 2 active probing (off by default, D12)"
     )

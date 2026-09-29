@@ -30,6 +30,7 @@ class InterventionStream:
         include_usage: bool,
         probe_interval: int = 400,
         probe_min_tokens: int = 0,
+        auto: bool = False,
     ) -> None:
         self._hub = hub
         self._session = session
@@ -40,6 +41,7 @@ class InterventionStream:
         self._include_usage = include_usage
         self._probe_interval = probe_interval
         self._probe_min_tokens = probe_min_tokens
+        self._auto = auto
         self._last_probe_at = 0
         self._generated = 0
         self._done: dict | None = None
@@ -133,6 +135,9 @@ class InterventionStream:
             answer = None
         self._last_probe_at = session.judge.thinking_tokens
         self._hub.add_probe(session, Probe(self._last_probe_at, answer, time.monotonic() - started))
+        if self._auto and session.probes is not None and session.probes.decision is not None:
+            session.auto_stopped = True
+            session.stop_requested.set()
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         session = self._session
@@ -178,6 +183,7 @@ class InterventionStream:
                 answer = self._done or {}
                 otg |= {
                     "intervened": True,
+                    "auto": session.auto_stopped,
                     "stopped_after_tokens": stopped_after,
                     "answer_prompt_tokens": answer.get("prompt_eval_count"),
                     "answer_prompt_cached_tokens": answer.get("prompt_eval_cached_count"),
@@ -198,6 +204,8 @@ class InterventionStream:
             self._hub.set_status(session, ERROR if self._error else DONE)
             if outcome == _DONE and not self._error:
                 self._hub.record_shadow(session, time.time() - session.created)
+            elif session.auto_stopped and not self._error:
+                self._hub.record_auto_stop(session, time.time() - session.created)
         except BaseException:
             if session.status in (THINKING, ANSWERING):
                 self._hub.set_status(session, CANCELLED)

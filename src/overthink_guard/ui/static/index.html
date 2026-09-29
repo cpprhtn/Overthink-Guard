@@ -81,7 +81,7 @@ function renderList() {
     class: "item" + (s.id === selected ? " active" : ""),
     onclick: () => { selected = s.id; selectedSegment = null; render(); },
   }, el("div", { class: "prompt" }, s.prompt), el("div", { class: "meta" },
-    `${s.model} · ${s.status}${s.intervened ? " · stopped early" : ""} · ~${s.thinking_tokens} thinking tokens`))));
+    `${s.model} · ${s.status}${s.intervened ? (s.auto_stopped ? " · auto-stopped" : " · stopped early") : ""} · ~${s.thinking_tokens} thinking tokens`))));
 }
 
 function renderDetail() {
@@ -95,7 +95,7 @@ function renderDetail() {
     el("div", { class: "row" },
       el("span", { class: "badge " + s.status }, s.status),
       el("span", {}, `~${s.thinking_tokens} thinking tokens`),
-      s.intervened ? el("span", { class: "badge" }, "stopped early") : "",
+      s.intervened ? el("span", { class: "badge", title: s.auto_stopped ? "Runaway guard: probe answers agreed after a long stretch of thinking" : "" }, s.auto_stopped ? "auto-stopped" : "stopped early") : "",
       s.probe_skipped ? el("span", { class: "badge", title: PROBE_SKIP[s.probe_skipped] }, `no probes: ${s.probe_skipped}`) : "",
       stopBtn),
   ];
@@ -153,11 +153,12 @@ function pct(x) { return `${Math.round(x * 100)}%`; }
 
 function renderStats(st) {
   const box = document.getElementById("stats");
-  if (!st.requests) return;
+  if (!st.requests && !st.auto_stops) return;
   const parts = [el("span", {}, "Shadow over ", el("b", {}, `${st.requests}`), " completed requests")];
   const tier = (name, t, extra = "") => el("span", {}, `${name}: would stop `, el("b", {}, `${t.would_stop}/${t.requests}`),
     ", save ", el("b", {}, pct(t.saved_ratio)), `, different answer ${t.mismatch}${extra}`);
-  parts.push(tier("Tier 0", st.tier0));
+  if (st.auto_stops) parts.push(el("span", {}, "Auto stops: ", el("b", {}, `${st.auto_stops}`)));
+  if (st.requests) parts.push(tier("Tier 0", st.tier0));
   if (st.tier2.requests) parts.push(tier("Probe", st.tier2, `, overhead ${pct(st.tier2.overhead_ratio)}`));
   box.replaceChildren(...parts);
 }

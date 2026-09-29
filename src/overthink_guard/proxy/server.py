@@ -35,6 +35,7 @@ def create_app(
     stats: ShadowStats | None = None,
     judge_config: JudgeConfig | None = None,
     probe: bool = False,
+    auto: bool = False,
     probe_interval: int = 400,
     probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS,
     probe_converge_k: int = DEFAULT_PROBE_K,
@@ -42,6 +43,8 @@ def create_app(
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0))
     backend = OllamaBackend(client, backend_url)
     hub = SessionHub(stats)
+    # Auto stops on probe convergence, so it needs probing.
+    probe = probe or auto
 
     async def passthrough(request: Request) -> Response:
         return await forward(request, client, backend_url, await request.body())
@@ -83,6 +86,7 @@ def create_app(
             include_usage=bool((body.get("stream_options") or {}).get("include_usage")),
             probe_interval=probe_interval,
             probe_min_tokens=probe_min_tokens,
+            auto=auto,
         )
         return StreamingResponse(
             stream, media_type="text/event-stream", headers={"cache-control": "no-cache", "x-otg-session": session.id}

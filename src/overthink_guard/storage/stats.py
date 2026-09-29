@@ -56,15 +56,18 @@ class ShadowStats:
                 f.write(json.dumps(record) + "\n")
 
     def summary(self) -> dict:
-        probed = [r for r in self._records if r.get("tier2")]
+        auto = [r for r in self._records if r.get("auto_stopped")]
+        shadow = [r for r in self._records if not r.get("auto_stopped")]
+        probed = [r for r in shadow if r.get("tier2")]
         probe_s = sum(r["tier2"]["probe_seconds"] for r in probed)
         elapsed = sum(r["elapsed_seconds"] for r in probed)
         return {
-            "requests": len(self._records),
-            "thinking_tokens": sum(r["thinking_tokens"] for r in self._records),
-            "tier0": _tier_summary(self._records, "tier0"),
+            "requests": len(shadow),
+            "thinking_tokens": sum(r["thinking_tokens"] for r in shadow),
+            "tier0": _tier_summary(shadow, "tier0"),
+            "auto_stops": len(auto),
             "tier2": {
-                **_tier_summary(self._records, "tier2"),
+                **_tier_summary(shadow, "tier2"),
                 "overhead_ratio": round(probe_s / elapsed, 4) if elapsed else 0.0,
             },
         }

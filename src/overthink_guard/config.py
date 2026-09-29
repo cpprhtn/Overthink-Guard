@@ -26,6 +26,7 @@ class Settings:
     port: int = 8484
     backend_url: str = "http://localhost:11434"
     judge: JudgeConfig = field(default_factory=JudgeConfig)
+    mode: str = "shadow"
     probe: bool = False
     probe_interval: int = 400
     probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS
@@ -37,6 +38,7 @@ _SCHEMA: dict = {
     "server": {"host": str, "port": int},
     "local": {
         "backend_url": str,
+        "mode": str,
         "auto_stop": {
             "converge_k": int,
             "min_thinking_tokens": int,
@@ -52,6 +54,9 @@ _SCHEMA: dict = {
     },
     "privacy": {"stats_file": (str, type(None))},
 }
+
+
+MODES = ("shadow", "auto")
 
 
 class ConfigError(ValueError):
@@ -86,6 +91,9 @@ def load_settings(path: Path | None) -> Settings:
     settings.host = server.get("host", settings.host)
     settings.port = server.get("port", settings.port)
     settings.backend_url = local.get("backend_url", settings.backend_url)
+    settings.mode = local.get("mode", settings.mode)
+    if settings.mode not in MODES:
+        raise ConfigError(f"local.mode: must be one of {', '.join(MODES)}")
     settings.judge = replace(settings.judge, **local.get("auto_stop", {}))
     settings.probe = signals.get("active_probe", settings.probe)
     settings.probe_interval = signals.get("probe_interval_tokens", settings.probe_interval)

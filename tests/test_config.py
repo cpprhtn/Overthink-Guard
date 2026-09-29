@@ -11,6 +11,7 @@ server:
   port: 9000
 local:
   backend_url: http://gpu-box:11434
+  mode: auto
   auto_stop:
     converge_k: 4
     repetition_threshold: 1
@@ -36,7 +37,7 @@ def test_missing_default_file_means_defaults(tmp_path):
 
 def test_full_file_is_applied(tmp_path):
     s = load_settings(write(tmp_path, FULL))
-    assert (s.host, s.port, s.backend_url) == ("127.0.0.1", 9000, "http://gpu-box:11434")
+    assert (s.host, s.port, s.backend_url, s.mode) == ("127.0.0.1", 9000, "http://gpu-box:11434", "auto")
     assert (s.judge.converge_k, s.judge.repetition_threshold, s.judge.min_thinking_tokens) == (4, 1, 300)
     assert (s.probe, s.probe_interval, s.probe_min_tokens, s.probe_converge_k) == (True, 256, 1000, 5)
     assert s.stats_file == Path("~/otg/shadow.jsonl").expanduser()
@@ -55,6 +56,7 @@ def test_null_stats_file_keeps_stats_in_memory(tmp_path):
         ("server:\n  port: true\n", "server.port: invalid value"),
         ("local:\n  signals:\n    active_probe: 1\n", "local.signals.active_probe: invalid value"),
         ("- just\n- a list\n", "config: expected a mapping"),
+        ("local:\n  mode: turbo\n", "local.mode: must be one of"),
     ],
 )
 def test_bad_settings_are_rejected_not_ignored(tmp_path, text, message):
