@@ -4,7 +4,7 @@ See when a local reasoning model has already reached its answer, and cut the res
 
 Overthink Guard is a small proxy that sits between your OpenAI-compatible client and [Ollama](https://ollama.com). It shows the model's thinking live, records where it *could* have stopped (Shadow mode), and gives you an **Answer now** button that ends the thinking and gets the answer in a fraction of a second. No GPU needed for the proxy itself; it runs on macOS, Linux and Windows.
 
-> **Status: early (0.2.0.dev0).** Ollama is the only backend, and it has been tested mainly with `qwen3:1.7b`. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
+> **Status: early (0.2.0.dev0).** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
 
 ## Quick start
 
@@ -44,7 +44,7 @@ Until 0.2.0 is published, the PyPI package is a name placeholder, so install fro
 
 **Shadow mode** (always on). Every request that thinks to completion is recorded: where Overthink Guard *would* have stopped, and whether the answer at that point matched the final one. The UI shows the running totals.
 
-**Active probing** (opt-in, `--probe`). Every 400 thinking tokens the generation pauses briefly. The model is asked for its current answer in a few tokens, and then the thinking resumes where it left off. Probing is off by default because it adds short pauses; the default detector reads only the thinking text.
+**Active probing** (opt-in, `--probe`). After the first 3,000 thinking tokens, the generation pauses briefly every 400 tokens. The model is asked for its current answer in a few tokens, and then the thinking resumes where it left off. Probing is off by default because it adds short pauses; the default detector reads only the thinking text.
 
 ## Measured so far
 
@@ -54,7 +54,9 @@ These results come from one small model, math questions only, and small samples,
 | --- | --- |
 | Answer now, Ollama + `qwen3:1.7b` | First answer token ~0.09 s after pressing; 327 of 337 prompt tokens served from cache; 809 generated tokens instead of 3,193 |
 | Default text-only detector, 986 public DeepSeek-R1 traces | Safe (the answer at the stop point differed from the final answer in 6 of 986 traces) but saves only ~0.2% of thinking, or ~2% with looser settings; models rarely state their answer before the end |
-| Opt-in probing, 17 gradable problems, live run with `k=3` | Would have stopped early on 11 of 17 and saved 76% of thinking tokens, but lost 2 answers by locking onto an early guess. Probe pauses cost ~4.7% of wall time. Replaying the recorded probe answers with `k=4` (the new default) gives 10 of 17 stopped, ~65% saved and no lost answers. Note that `k=4` was chosen on this same sample. |
+| Opt-in probing, `qwen3:1.7b`, 17 problems used to choose the rule | `k=3` from the start would have saved 76% of thinking tokens, but lost 2 answers by locking onto an early guess. `k=4` lost none on this sample. |
+| Same, 20 held-out problems | `k=4` from the start lost 2 answers here (57% saved): the model can hold a wrong answer for 2,000+ tokens before correcting it. Ignoring probes before 3,000 thinking tokens (the new default) lost none on either sample and saved 40% overall. That rule was also chosen on these samples, so it still needs validating. |
+| Probe cost | ~4.7% of wall time on Apple Silicon GPU, ~5% CPU-only; each probe hits the KV cache |
 
 ## Configuration
 
@@ -74,6 +76,7 @@ local:
   signals:
     active_probe: false       # same as --probe
     probe_interval_tokens: 400
+    probe_min_tokens: 3000    # no probes before this much thinking
     probe_converge_k: 4
 privacy:
   stats_file: null            # null keeps Shadow statistics in memory only
@@ -92,6 +95,7 @@ privacy:
 ## Known limitations
 
 - Ollama only. llama.cpp server and LM Studio are planned.
+- Answer now and probing rely on the model's chat template accepting a prefilled assistant turn. This is verified for Qwen3. It does not work for Ollama's DeepSeek-R1 template, so those models, and any model not yet verified, are observed only.
 - Intervention covers streamed single-turn text chat; everything else passes through.
 - No CORS headers, so browser apps that call the proxy directly from a page will not work. Server-side clients are fine.
 - When a request is intervened or probed, `usage.prompt_tokens` is an estimate, because Ollama does not report it for a cut stream.
