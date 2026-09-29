@@ -18,7 +18,7 @@ _HYPOTHESIS = re.compile(r"(?i)\b(?:maybe|perhaps|let's try|let me try|one appro
 _UNDERSTAND = re.compile(
     r"(?i)\b(?:the question asks|we need to|i need to|the problem (?:says|asks|is)|we are given)\b"
 )
-_MATH_CHAR = re.compile(r"[\d=+\-*/^×÷]")
+_MATH_CHAR = re.compile(r"[\d=+\-*/^×÷]")  # noqa: RUF001 - the multiplication sign is intended
 
 
 def classify(

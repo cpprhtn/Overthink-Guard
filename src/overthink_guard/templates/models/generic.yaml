@@ -9,6 +9,14 @@ thinking:
 stop_injection:
   thinking_prefix: "\n"
   text: "\n\nI have enough to answer now."
+# Tier 2 (opt-in): the probe prefills the answer up to an open \boxed{ and reads a few tokens.
+probe:
+  answer_prefix: "The final answer is $\\boxed{"
+  max_tokens: 16
+# Resuming thinking after a probe: the chat thinking field always closes the block, so the open tag
+# goes in content instead and the model's continuation (thinking, end tag, answer) arrives as content.
+resume:
+  content_prefix: "<think>\n"
 extract_boxed: true
 # Longer captures are prose ("the answer is unique, but ..."), not answers.
 max_answer_chars: 40

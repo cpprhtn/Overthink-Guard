@@ -10,6 +10,8 @@ from overthink_guard.proxy import create_app
 BASE = "http://127.0.0.1:8484"
 QUESTION = "What is 17*24?"
 THINKING = ["Okay, ", "17 times 24. ", "So the answer is 408.\n\n", "Wait, let me check ", "again. ", "17*24 = 408."]
+# After a resume Ollama streams the continuation as content, closing tag included (spike: resume shape).
+RESUMED = ["More checking. ", "Still 408.", "</think>", "\n\n", "408"]
 
 
 def ndjson(*chunks: dict) -> bytes:
@@ -42,6 +44,8 @@ class FakeOllama:
         self.app = None
         self.stop_after: int | None = None
         self.native_status = 200
+        self.probe_status = 200
+        self.resume_status = 200
 
     def bodies(self, path: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if r.url.path == path]
@@ -57,6 +61,13 @@ class FakeOllama:
         if self.native_status != 200:
             return httpx.Response(self.native_status, stream=httpx.ByteStream(b'{"error": "think not supported"}'))
         body = json.loads(request.content)
+        if body.get("stream") is False:
+            probe = {"message": {"role": "assistant", "content": "408}$."}, "done": True, "prompt_eval_count": 50}
+            return httpx.Response(self.probe_status, json=probe if self.probe_status == 200 else {"error": "x"})
+        if not body.get("think") and body["messages"][-1]["role"] == "assistant":
+            if self.resume_status != 200:
+                return httpx.Response(self.resume_status, stream=httpx.ByteStream(b'{"error": "x"}'))
+            return httpx.Response(200, content=ndjson(*(content_chunk(t) for t in RESUMED), DONE))
         if body.get("think") and body["messages"][-1]["role"] == "assistant":
             answer = ndjson(
                 content_chunk("The answer is "),
@@ -81,9 +92,14 @@ def fake():
 
 
 @pytest.fixture
-def client(fake):
+def app_kwargs():
+    return {}
+
+
+@pytest.fixture
+def client(fake, app_kwargs):
     upstream = httpx.AsyncClient(transport=httpx.MockTransport(fake.handler))
-    app = create_app("http://ollama.test", client=upstream)
+    app = create_app("http://ollama.test", client=upstream, **app_kwargs)
     fake.app = app
     with TestClient(app, base_url=BASE) as test_client:
         yield test_client
@@ -234,3 +250,77 @@ def test_openai_options_map_to_ollama_options():
     )
     assert native["options"] == {"temperature": 0.2, "num_predict": 50, "stop": ["END"], "seed": 1}
     assert native["messages"][0] == {"role": "system", "content": "s"}
+
+
+@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+def test_probing_pauses_probes_and_resumes_transparently(client, fake):
+    events = sse_events(chat(client, max_tokens=100).text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING[:3]) + "More checking. Still 408."
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+
+    _, probe, resume = fake.bodies("/api/chat")
+    assert probe["stream"] is False and probe["think"] is True
+    assert probe["messages"][-1]["content"].endswith("\\boxed{")
+    assert probe["options"] == {"num_predict": 16, "temperature": 0}
+    assert resume["messages"][-1] == {"role": "assistant", "content": "<think>\n" + "".join(THINKING[:3])}
+    assert "think" not in resume
+    assert resume["options"]["num_predict"] == 100 - 3
+
+    session = fake.app.state.hub.get("1")
+    assert [(p.at_tokens, p.answer) for p in session.probes.probes] == [(3, "408")]
+    assert session.judge.thinking_tokens == 5
+    assert events[-2]["otg"]["probes"] == 1
+    assert session.shadow["tier2"]["probes"] == 1
+    assert session.shadow["perturbed"] is True
+    assert fake.app.state.hub.stats.summary()["tier2"]["requests"] == 1
+
+
+@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+def test_failed_probe_is_recorded_without_answer_and_thinking_continues(client, fake):
+    fake.probe_status = 500
+    events = sse_events(chat(client).text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+    assert "error" not in events[-2]["otg"]
+    assert [(p.at_tokens, p.answer) for p in fake.app.state.hub.get("1").probes.probes] == [(3, None)]
+
+
+@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+def test_failed_resume_ends_the_stream_with_an_error_and_no_shadow(client, fake):
+    fake.resume_status = 503
+    events = sse_events(chat(client).text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING[:3])
+    assert events[-2]["otg"]["error"] == "resume request failed with HTTP 503"
+    assert events[-1] == "[DONE]"
+    session = fake.app.state.hub.get("1")
+    assert session.status == "error"
+    assert session.shadow is None
+
+
+@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+def test_client_seed_disables_probing(client, fake):
+    chat(client, seed=7)
+    assert len(fake.bodies("/api/chat")) == 1
+    session = fake.app.state.hub.get("1")
+    assert session.probes is None
+    assert session.probe_skipped == "seed"
+
+
+def test_completed_request_records_shadow_counts_but_no_text(client, fake):
+    chat(client)
+    record = fake.app.state.hub.get("1").shadow
+    assert set(record) == {"ts", "model", "thinking_tokens", "elapsed_seconds", "tier0", "tier2", "perturbed"}
+    assert record["thinking_tokens"] == len(THINKING)
+    assert record["tier2"] is None
+    assert record["perturbed"] is False
+    assert QUESTION not in json.dumps(record) and "408" not in json.dumps(record)
+    assert client.get("/otg/api/stats").json()["requests"] == 1
+
+
+def test_answer_now_is_not_recorded_as_shadow(client, fake):
+    fake.stop_after = 3
+    chat(client)
+    assert fake.app.state.hub.get("1").shadow is None
+    assert fake.app.state.hub.stats.summary()["requests"] == 0

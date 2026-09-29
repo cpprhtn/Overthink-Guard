@@ -64,6 +64,32 @@ def answer_prefill(native: dict, thinking: str, template: Template, generated_to
     return body
 
 
+def probe_request(native: dict, thinking: str, template: Template) -> dict:
+    """Short greedy completion of an open \\boxed{ after the thinking so far (Tier 2 probe)."""
+    prefill = {
+        "role": "assistant",
+        "content": template.probe_answer_prefix,
+        "thinking": template.stop_thinking_prefix + thinking.rstrip() + template.stop_injection_text,
+    }
+    return {
+        "model": native["model"],
+        "messages": [*native["messages"], prefill],
+        "think": True,
+        "stream": False,
+        "options": {"num_predict": template.probe_max_tokens, "temperature": 0},
+    }
+
+
+def resume_request(native: dict, thinking: str, template: Template, generated_tokens: int) -> dict:
+    """Continues the paused thinking; the continuation streams back in content, tags included."""
+    prefill = {"role": "assistant", "content": template.resume_content_prefix + thinking}
+    body = {**native, "messages": [*native["messages"], prefill]}
+    budget = native.get("options", {}).get("num_predict")
+    if budget is not None:
+        body["options"] = {**native["options"], "num_predict": max(1, budget - generated_tokens)}
+    return body
+
+
 class OllamaBackend:
     def __init__(self, client: httpx.AsyncClient, base_url: str) -> None:
         self._client = client
@@ -72,6 +98,11 @@ class OllamaBackend:
     async def open_chat(self, body: dict) -> httpx.Response:
         request = self._client.build_request("POST", f"{self._base_url}/api/chat", json=body)
         return await self._client.send(request, stream=True)
+
+    async def complete(self, body: dict) -> dict:
+        response = await self._client.post(f"{self._base_url}/api/chat", json=body)
+        response.raise_for_status()
+        return response.json()
 
 
 async def iter_chunks(response: httpx.Response) -> AsyncIterator[dict]:

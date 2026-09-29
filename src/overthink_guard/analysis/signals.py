@@ -68,6 +68,6 @@ def novelty(new: str, context: str) -> float:
 
 
 def estimate_tokens(text: str) -> int:
-    """Rough token count without a tokenizer: ~4 chars/token for ASCII, ~1 per non-ASCII char."""
+    """~4 chars/token for ASCII, ~1 per non-ASCII char; undercounts Qwen math thinking ~1.7x (spike S1)."""
     ascii_chars = sum(1 for c in text if ord(c) < 128)
     return round(ascii_chars / 4 + (len(text) - ascii_chars))

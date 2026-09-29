@@ -12,12 +12,14 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
-from overthink_guard.analysis import Judge
+from overthink_guard.analysis import Judge, JudgeConfig, ProbeTracker
+from overthink_guard.analysis.prober import DEFAULT_PROBE_K
 from overthink_guard.backends import OllamaBackend, to_native_chat
 from overthink_guard.control import SessionHub
 from overthink_guard.proxy.intervene import InterventionStream
 from overthink_guard.proxy.passthrough import forward
 from overthink_guard.proxy.security import LocalOnlyMiddleware, allowed_hosts
+from overthink_guard.storage import ShadowStats
 from overthink_guard.templates import template_for_model
 
 _ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
@@ -30,10 +32,15 @@ def create_app(
     port: int = 8484,
     client: httpx.AsyncClient | None = None,
     heartbeat_s: float = 15.0,
+    stats: ShadowStats | None = None,
+    judge_config: JudgeConfig | None = None,
+    probe: bool = False,
+    probe_interval: int = 400,
+    probe_converge_k: int = DEFAULT_PROBE_K,
 ) -> Starlette:
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0))
     backend = OllamaBackend(client, backend_url)
-    hub = SessionHub()
+    hub = SessionHub(stats)
 
     async def passthrough(request: Request) -> Response:
         return await forward(request, client, backend_url, await request.body())
@@ -55,7 +62,12 @@ def create_app(
 
         template = template_for_model(native["model"])
         prompt = next(m["content"] for m in native["messages"] if m["role"] == "user")
-        session = hub.create(native["model"], prompt, Judge(template))
+        # Pausing to probe reseeds sampling on resume, so a client-fixed seed would no longer reproduce.
+        probing = probe and "seed" not in native.get("options", {})
+        tracker = ProbeTracker(probe_converge_k) if probing else None
+        session = hub.create(native["model"], prompt, Judge(template, judge_config or JudgeConfig()), tracker)
+        if probe and not probing:
+            session.probe_skipped = "seed"
         stream = InterventionStream(
             hub=hub,
             session=session,
@@ -64,6 +76,7 @@ def create_app(
             native=native,
             template=template,
             include_usage=bool((body.get("stream_options") or {}).get("include_usage")),
+            probe_interval=probe_interval,
         )
         return StreamingResponse(
             stream, media_type="text/event-stream", headers={"cache-control": "no-cache", "x-otg-session": session.id}
@@ -97,6 +110,9 @@ def create_app(
             return JSONResponse({"ok": True})
         return JSONResponse({"ok": False, "error": "session is not thinking"}, status_code=409)
 
+    async def stats_summary(_: Request) -> Response:
+        return JSONResponse(hub.stats.summary())
+
     @asynccontextmanager
     async def lifespan(_: Starlette):
         yield
@@ -106,6 +122,7 @@ def create_app(
         routes=[
             Route("/ui", ui),
             Route("/otg/api/events", events),
+            Route("/otg/api/stats", stats_summary),
             Route("/otg/api/sessions/{session_id}/stop", stop, methods=["POST"]),
             Route("/v1/chat/completions", chat_completions, methods=["POST"]),
             Route("/{path:path}", passthrough, methods=_ALL_METHODS),

@@ -18,6 +18,9 @@ class Template:
     starts_in_thinking: bool
     stop_thinking_prefix: str
     stop_injection_text: str
+    probe_answer_prefix: str
+    probe_max_tokens: int
+    resume_content_prefix: str
     extract_boxed: bool
     max_answer_chars: int
     answer_patterns: tuple[re.Pattern[str], ...]
@@ -26,6 +29,8 @@ class Template:
 
 def _build(raw: dict) -> Template:
     thinking = raw["thinking"]
+    if not raw["probe"]["answer_prefix"].endswith("\\boxed{"):
+        raise ValueError(f"template {raw['id']}: probe.answer_prefix must end with an open \\boxed{{")
     return Template(
         id=raw["id"],
         match=tuple(raw.get("match", [])),
@@ -34,6 +39,9 @@ def _build(raw: dict) -> Template:
         starts_in_thinking=bool(thinking.get("starts_in_thinking", False)),
         stop_thinking_prefix=raw["stop_injection"].get("thinking_prefix", ""),
         stop_injection_text=raw["stop_injection"]["text"],
+        probe_answer_prefix=raw["probe"]["answer_prefix"],
+        probe_max_tokens=int(raw["probe"]["max_tokens"]),
+        resume_content_prefix=raw["resume"]["content_prefix"],
         extract_boxed=bool(raw.get("extract_boxed", False)),
         max_answer_chars=int(raw.get("max_answer_chars", 40)),
         answer_patterns=tuple(re.compile(p) for p in raw.get("tentative_answer_patterns", [])),

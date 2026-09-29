@@ -45,11 +45,15 @@
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; background: var(--c); vertical-align: -1px; }
   .answers { font-size: 13px; color: var(--muted); margin-bottom: 12px; overflow-wrap: anywhere; }
   .answers b { color: var(--text); font-weight: 600; }
+  .stats { padding: 8px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 20px; }
+  .stats b { color: var(--text); font-weight: 600; }
+  .shadow { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin: 0; max-height: 45vh; overflow-y: auto; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
 <body>
 <header><h1>Overthink Guard</h1><span class="conn" id="conn">connecting…</span></header>
+<div class="stats" id="stats">Shadow: no completed requests yet</div>
 <main>
   <nav id="list"><div class="empty">No requests yet. Point your client's base URL at this proxy.</div></nav>
   <section id="detail"><div class="empty">Select a request.</div></section>
@@ -84,7 +88,6 @@ function renderDetail() {
   const detail = document.getElementById("detail");
   const s = sessions.get(selected);
   if (!s) return;
-  const total = Math.max(1, ...s.segments.map(g => g.end_tokens));
   const stopBtn = el("button", { onclick: () => stopNow(s.id) }, "Answer now");
   stopBtn.disabled = s.status !== "thinking";
   const parts = [
@@ -92,6 +95,7 @@ function renderDetail() {
       el("span", { class: "badge " + s.status }, s.status),
       el("span", {}, `~${s.thinking_tokens} thinking tokens`),
       s.intervened ? el("span", { class: "badge" }, "stopped early") : "",
+      s.probe_skipped ? el("span", { class: "badge", title: "Resuming after a probe would break a client-fixed seed" }, `no probes: ${s.probe_skipped}`) : "",
       stopBtn),
   ];
   if (s.suggestion && s.status === "thinking") {
@@ -111,13 +115,47 @@ function renderDetail() {
     answers.forEach((g, i) => trail.append(i ? " → " : "", el("b", {}, g.answer), ` @${g.end_tokens}`));
     parts.push(trail);
   }
-  const seg = s.segments.find(g => g.index === selectedSegment) || s.segments[s.segments.length - 1];
+  if (s.probes.length) {
+    const trail = el("div", { class: "answers" }, "Probe answers: ");
+    s.probes.forEach((p, i) => trail.append(i ? " → " : "", el("b", {}, p.answer ?? "?"), ` @${p.at_tokens}`));
+    if (s.probe_converged) trail.append(` (converged @${s.probe_converged.at_tokens})`);
+    parts.push(trail);
+  }
+  if (s.shadow) parts.push(el("div", { class: "shadow" }, shadowText(s.shadow)));
+  const seg =s.segments.find(g => g.index === selectedSegment) || s.segments[s.segments.length - 1];
   parts.push(el("pre", {}, seg ? `[${seg.phase}] ${seg.text.trim()}` : "Waiting for thinking…"));
   parts.unshift(el("div", { class: "row" }, el("strong", {}, s.prompt)));
   detail.replaceChildren(...parts);
 }
 
 function render() { renderList(); renderDetail(); }
+
+const MATCH = { true: "same answer", false: "DIFFERENT answer", null: "answer unknown" };
+
+function tierText(name, tier, total) {
+  if (!tier) return "";
+  if (tier.stop_at === null) return `${name} would not have stopped.`;
+  return `${name} would have stopped at ${tier.stop_at} (saving ${total - tier.stop_at} tokens, ${MATCH[tier.match]}).`;
+}
+
+function shadowText(r) {
+  const probe = r.tier2 ? ` ${tierText("Probing", r.tier2, r.thinking_tokens)} ${r.tier2.probes} probes took ${r.tier2.probe_seconds}s.` : "";
+  const perturbed = r.perturbed ? " This run was paused for probes, so it may differ from an unprobed one." : "";
+  return `Shadow: ${tierText("Tier 0", r.tier0, r.thinking_tokens)}${probe}${perturbed}`;
+}
+
+function pct(x) { return `${Math.round(x * 100)}%`; }
+
+function renderStats(st) {
+  const box = document.getElementById("stats");
+  if (!st.requests) return;
+  const parts = [el("span", {}, "Shadow over ", el("b", {}, `${st.requests}`), " completed requests")];
+  const tier = (name, t, extra = "") => el("span", {}, `${name}: would stop `, el("b", {}, `${t.would_stop}/${t.requests}`),
+    ", save ", el("b", {}, pct(t.saved_ratio)), `, different answer ${t.mismatch}${extra}`);
+  parts.push(tier("Tier 0", st.tier0));
+  if (st.tier2.requests) parts.push(tier("Probe", st.tier2, `, overhead ${pct(st.tier2.overhead_ratio)}`));
+  box.replaceChildren(...parts);
+}
 
 async function stopNow(id) {
   await fetch(`/otg/api/sessions/${encodeURIComponent(id)}/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -132,11 +170,17 @@ function connect() {
     const ev = JSON.parse(msg.data);
     if (ev.type === "session") {
       const prev = sessions.get(ev.id);
-      sessions.set(ev.id, { ...ev, segments: prev ? prev.segments : [] });
+      sessions.set(ev.id, { ...ev, segments: prev ? prev.segments : [], probes: prev ? prev.probes : [] });
       if (selected === null) selected = ev.id;
     } else if (ev.type === "segment") {
       const s = sessions.get(ev.session);
       if (s && !s.segments.some(g => g.index === ev.index)) s.segments.push(ev);
+    } else if (ev.type === "probe") {
+      const s = sessions.get(ev.session);
+      if (s && !s.probes.some(p => p.at_tokens === ev.at_tokens)) s.probes.push(ev);
+    } else if (ev.type === "stats") {
+      renderStats(ev);
+      return;
     }
     render();
   };
