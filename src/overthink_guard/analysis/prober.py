@@ -4,10 +4,11 @@ from dataclasses import dataclass, field
 
 from overthink_guard.analysis.signals import extract_boxed, normalize_answer
 
-# [가설] Early probe answers can hold a wrong guess for 2000+ tokens; ignoring probes before 3000 thinking tokens
-# was the best zero-loss rule on 37 problems, chosen in-sample (docs/spikes/shadow-live-probe.md).
+# Probe answers can hold a wrong guess for 5000+ tokens before a late correction, so probing starts late and mainly
+# catches runaway thinking. Pre-registered rule C held C1 on 51 fresh completed runs across qwen3 and deepseek-r1
+# (docs/spikes/shadow-live-probe.md).
 DEFAULT_PROBE_K = 4
-DEFAULT_PROBE_MIN_TOKENS = 3000
+DEFAULT_PROBE_MIN_TOKENS = 6000
 
 
 @dataclass(frozen=True)
