@@ -56,6 +56,7 @@ These results come from one small model, math questions only, and small samples,
 | Default text-only detector, 986 public DeepSeek-R1 traces | Safe (the answer at the stop point differed from the final answer in 6 of 986 traces) but saves only ~0.2% of thinking, or ~2% with looser settings; models rarely state their answer before the end |
 | Opt-in probing, `qwen3:1.7b`, 17 problems used to choose the rule | `k=3` from the start would have saved 76% of thinking tokens, but lost 2 answers by locking onto an early guess. `k=4` lost none on this sample. |
 | Same, 20 held-out problems | `k=4` from the start lost 2 answers here (57% saved): the model can hold a wrong answer for 2,000+ tokens before correcting it. Ignoring probes before 3,000 thinking tokens (the new default) lost none on either sample and saved 40% overall. That rule was also chosen on these samples, so it still needs validating. |
+| Same, 34 more held-out problems (rule fixed beforehand) | Ignoring probes before 3,000 tokens and then `k=4` saved 32%, but lost 2 answers and gained 1 (net −1 of 34). The misses were late corrections, where a wrong answer was held for 5,000+ tokens, which no answer-stability rule can foresee. Probing is not yet accurate enough to stop automatically. |
 | Probe cost | ~4.7% of wall time on Apple Silicon GPU, ~5% CPU-only; each probe hits the KV cache |
 
 ## Configuration

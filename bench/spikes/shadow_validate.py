@@ -28,8 +28,8 @@ def held_out(cache: Path, skip: int, start: int, count: int) -> list[tuple[str, 
     return [p for p in short[skip:] if not MULTIPLE_CHOICE.search(p[0])][start : start + count]
 
 
-def session_state(proxy: str, session: str) -> tuple[dict, list]:
-    summary, probes = {}, []
+def session_state(proxy: str, session: str) -> tuple[dict, list, list]:
+    summary, probes, segments = {}, [], []
     try:
         with httpx.stream("GET", f"{proxy}/otg/api/events", timeout=1.5) as r:
             for line in r.iter_lines():
@@ -38,11 +38,13 @@ def session_state(proxy: str, session: str) -> tuple[dict, list]:
                 event = json.loads(line[6:])
                 if event.get("session") == session and event["type"] == "probe":
                     probes.append([event["at_tokens"], event["answer"]])
+                elif event.get("session") == session and event["type"] == "segment":
+                    segments.append([event["start_tokens"], event["end_tokens"], event["text"]])
                 elif event["type"] == "session" and event["id"] == session:
                     summary = event
     except httpx.ReadTimeout:
         pass
-    return summary, probes
+    return summary, probes, sorted(segments)
 
 
 def main() -> None:
@@ -74,7 +76,7 @@ def main() -> None:
                 finish = chunk.choices[0].finish_reason
         boxed = extract_boxed(content)
         final = normalize_answer(boxed[-1][1]) if boxed and finish != "length" else None
-        summary, probes = session_state(args.proxy, session)
+        summary, probes, segments = session_state(args.proxy, session)
         shadow = summary.get("shadow") or {}
         data["problems"].append(
             {
@@ -85,6 +87,7 @@ def main() -> None:
                 "thinking_tokens": shadow.get("thinking_tokens", summary.get("thinking_tokens")),
                 "tier0_stop": (shadow.get("tier0") or {}).get("stop_at"),
                 "probes": probes,
+                "segments": segments,
             }
         )
         if finish == "length":
