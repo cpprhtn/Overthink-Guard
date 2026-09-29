@@ -133,7 +133,7 @@ class SessionHub:
 
     def request_stop(self, session_id: str) -> bool:
         session = self._sessions.get(session_id)
-        if session is None or session.status != THINKING:
+        if session is None or session.status != THINKING or not session.judge.template.prefill_supported:
             return False
         session.stop_requested.set()
         return True
@@ -149,6 +149,7 @@ class SessionHub:
             "status": session.status,
             "thinking_tokens": session.judge.thinking_tokens,
             "intervened": session.intervened,
+            "can_intervene": session.judge.template.prefill_supported,
             "suggestion": None
             if decision is None
             else {"at_tokens": decision.at_tokens, "answer": decision.answer, "reasons": list(decision.reasons)},

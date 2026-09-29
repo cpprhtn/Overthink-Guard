@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from overthink_guard.analysis import JudgeConfig
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K
+from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.storage import default_stats_path
 
 
@@ -28,6 +28,7 @@ class Settings:
     judge: JudgeConfig = field(default_factory=JudgeConfig)
     probe: bool = False
     probe_interval: int = 400
+    probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS
     probe_converge_k: int = DEFAULT_PROBE_K
     stats_file: Path | None = field(default_factory=default_stats_path)
 
@@ -42,7 +43,12 @@ _SCHEMA: dict = {
             "revision_cooldown_tokens": int,
             "repetition_threshold": (int, float),
         },
-        "signals": {"active_probe": bool, "probe_interval_tokens": int, "probe_converge_k": int},
+        "signals": {
+            "active_probe": bool,
+            "probe_interval_tokens": int,
+            "probe_min_tokens": int,
+            "probe_converge_k": int,
+        },
     },
     "privacy": {"stats_file": (str, type(None))},
 }
@@ -83,6 +89,7 @@ def load_settings(path: Path | None) -> Settings:
     settings.judge = replace(settings.judge, **local.get("auto_stop", {}))
     settings.probe = signals.get("active_probe", settings.probe)
     settings.probe_interval = signals.get("probe_interval_tokens", settings.probe_interval)
+    settings.probe_min_tokens = signals.get("probe_min_tokens", settings.probe_min_tokens)
     settings.probe_converge_k = signals.get("probe_converge_k", settings.probe_converge_k)
     privacy = data.get("privacy", {})
     if "stats_file" in privacy:

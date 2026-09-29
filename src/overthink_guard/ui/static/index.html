@@ -89,13 +89,14 @@ function renderDetail() {
   const s = sessions.get(selected);
   if (!s) return;
   const stopBtn = el("button", { onclick: () => stopNow(s.id) }, "Answer now");
-  stopBtn.disabled = s.status !== "thinking";
+  stopBtn.disabled = s.status !== "thinking" || !s.can_intervene;
+  if (!s.can_intervene) stopBtn.title = "Not verified for this model's chat template, so Overthink Guard only observes it";
   const parts = [
     el("div", { class: "row" },
       el("span", { class: "badge " + s.status }, s.status),
       el("span", {}, `~${s.thinking_tokens} thinking tokens`),
       s.intervened ? el("span", { class: "badge" }, "stopped early") : "",
-      s.probe_skipped ? el("span", { class: "badge", title: "Resuming after a probe would break a client-fixed seed" }, `no probes: ${s.probe_skipped}`) : "",
+      s.probe_skipped ? el("span", { class: "badge", title: PROBE_SKIP[s.probe_skipped] }, `no probes: ${s.probe_skipped}`) : "",
       stopBtn),
   ];
   if (s.suggestion && s.status === "thinking") {
@@ -131,6 +132,10 @@ function renderDetail() {
 function render() { renderList(); renderDetail(); }
 
 const MATCH = { true: "same answer", false: "DIFFERENT answer", null: "answer unknown" };
+const PROBE_SKIP = {
+  seed: "Resuming after a probe would break a client-fixed seed",
+  template: "Probing is not verified for this model's chat template",
+};
 
 function tierText(name, tier, total) {
   if (!tier) return "";

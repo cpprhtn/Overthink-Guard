@@ -1,6 +1,9 @@
 # The R1 chat template pre-inserts "<think>\n" into the prompt, so output starts
-# mid-thinking and only "</think>" appears. Unverified for Ollama's template (spike S1).
+# mid-thinking and only "</think>" appears.
+# Ollama 0.34.4's deepseek-r1 template drops the thinking field and always closes the assistant turn, so a prefilled
+# answer ignores the thinking and a resume restarts it. Raw prompts work but need the template rebuilt by hand.
 id: deepseek_r1
+prefill_supported: false
 extends: generic
 match: ["deepseek-r1*", "deepseek-reasoner*"]
 thinking:

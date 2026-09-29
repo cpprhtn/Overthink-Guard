@@ -4,6 +4,9 @@ thinking:
   start: "<think>"
   end: "</think>"
   starts_in_thinking: false
+# Answer now and probing prefill an assistant turn, which only works if the backend's chat template renders the
+# thinking field and leaves the last assistant turn open. Off unless verified per model (qwen3 yes, deepseek-r1 no).
+prefill_supported: false
 # Appended to the received thinking when prefilling the answer. Ollama strips the newline the
 # model emits after <think>; restoring it keeps the prompt aligned with the KV cache (spike S1).
 stop_injection:

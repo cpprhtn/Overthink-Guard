@@ -1,3 +1,5 @@
 id: qwen3
 extends: generic
 match: ["qwen3*", "qwq*"]
+# Verified on Ollama 0.34.4 with qwen3:1.7b (docs/spikes/s1-s8-t2-ollama.md).
+prefill_supported: true

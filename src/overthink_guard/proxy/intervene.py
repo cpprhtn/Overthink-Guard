@@ -29,6 +29,7 @@ class InterventionStream:
         template: Template,
         include_usage: bool,
         probe_interval: int = 400,
+        probe_min_tokens: int = 0,
     ) -> None:
         self._hub = hub
         self._session = session
@@ -38,6 +39,7 @@ class InterventionStream:
         self._template = template
         self._include_usage = include_usage
         self._probe_interval = probe_interval
+        self._probe_min_tokens = probe_min_tokens
         self._last_probe_at = 0
         self._generated = 0
         self._done: dict | None = None
@@ -112,6 +114,7 @@ class InterventionStream:
             if (
                 session.status == THINKING
                 and session.probes is not None
+                and session.judge.thinking_tokens >= self._probe_min_tokens
                 and session.judge.thinking_tokens - self._last_probe_at >= self._probe_interval
             ):
                 yield _PROBE

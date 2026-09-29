@@ -13,7 +13,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Route
 
 from overthink_guard.analysis import Judge, JudgeConfig, ProbeTracker
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K
+from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.backends import OllamaBackend, to_native_chat
 from overthink_guard.control import SessionHub
 from overthink_guard.proxy.intervene import InterventionStream
@@ -36,6 +36,7 @@ def create_app(
     judge_config: JudgeConfig | None = None,
     probe: bool = False,
     probe_interval: int = 400,
+    probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS,
     probe_converge_k: int = DEFAULT_PROBE_K,
 ) -> Starlette:
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0))
@@ -62,12 +63,15 @@ def create_app(
 
         template = template_for_model(native["model"])
         prompt = next(m["content"] for m in native["messages"] if m["role"] == "user")
-        # Pausing to probe reseeds sampling on resume, so a client-fixed seed would no longer reproduce.
-        probing = probe and "seed" not in native.get("options", {})
-        tracker = ProbeTracker(probe_converge_k) if probing else None
+        # Probing needs a prefill-capable template, and resuming reseeds sampling, which would break a client seed.
+        skip = None
+        if probe and not template.prefill_supported:
+            skip = "template"
+        elif probe and "seed" in native.get("options", {}):
+            skip = "seed"
+        tracker = ProbeTracker(probe_converge_k) if probe and skip is None else None
         session = hub.create(native["model"], prompt, Judge(template, judge_config or JudgeConfig()), tracker)
-        if probe and not probing:
-            session.probe_skipped = "seed"
+        session.probe_skipped = skip
         stream = InterventionStream(
             hub=hub,
             session=session,
@@ -77,6 +81,7 @@ def create_app(
             template=template,
             include_usage=bool((body.get("stream_options") or {}).get("include_usage")),
             probe_interval=probe_interval,
+            probe_min_tokens=probe_min_tokens,
         )
         return StreamingResponse(
             stream, media_type="text/event-stream", headers={"cache-control": "no-cache", "x-otg-session": session.id}

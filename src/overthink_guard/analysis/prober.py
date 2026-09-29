@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 
 from overthink_guard.analysis.signals import extract_boxed, normalize_answer
 
-# [가설] k=3 locked onto early guesses on hard problems; k=4 lost none on 17 (docs/spikes/shadow-live-probe.md).
+# [가설] Early probe answers can hold a wrong guess for 2000+ tokens; ignoring probes before 3000 thinking tokens
+# was the best zero-loss rule on 37 problems, chosen in-sample (docs/spikes/shadow-live-probe.md).
 DEFAULT_PROBE_K = 4
+DEFAULT_PROBE_MIN_TOKENS = 3000
 
 
 @dataclass(frozen=True)

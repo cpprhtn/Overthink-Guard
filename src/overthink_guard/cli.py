@@ -8,7 +8,7 @@ from pathlib import Path
 
 from overthink_guard import __version__
 from overthink_guard.analysis import JudgeConfig, ReplayReport, replay
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K
+from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.config import ConfigError, Settings, default_config_path, load_settings
 from overthink_guard.templates import get_template, template_ids
 
@@ -117,6 +117,7 @@ def resolve_settings(args: argparse.Namespace) -> Settings:
         ("backend_url", "backend_url"),
         ("probe", "probe"),
         ("probe_interval", "probe_interval"),
+        ("probe_min_tokens", "probe_min_tokens"),
         ("probe_k", "probe_converge_k"),
         ("stats_file", "stats_file"),
     ]:
@@ -149,7 +150,10 @@ def _start(args: argparse.Namespace) -> int:
     print(f"→ UI:    {base}/ui")
     print("→ mode:  shadow (nothing is stopped unless you press 'Answer now'; would-stop points are recorded)")
     if s.probe:
-        print(f"→ probe: every {s.probe_interval} thinking tokens, k={s.probe_converge_k} (Tier 2, adds short pauses)")
+        print(
+            f"→ probe: every {s.probe_interval} thinking tokens after the first {s.probe_min_tokens}, "
+            f"k={s.probe_converge_k} (Tier 2, adds short pauses)"
+        )
     print(f"→ stats: {s.stats_file or 'memory only'} (counts only, no text)", flush=True)
     app = create_app(
         s.backend_url,
@@ -159,6 +163,7 @@ def _start(args: argparse.Namespace) -> int:
         judge_config=s.judge,
         probe=s.probe,
         probe_interval=s.probe_interval,
+        probe_min_tokens=s.probe_min_tokens,
         probe_converge_k=s.probe_converge_k,
     )
     uvicorn.run(app, host=s.host, port=s.port, log_level="warning")
@@ -195,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--probe", action=argparse.BooleanOptionalAction, help="opt-in Tier 2 active probing (off by default, D12)"
     )
     start.add_argument("--probe-interval", type=int, help="thinking tokens between probes (default 400)")
+    start.add_argument(
+        "--probe-min-tokens",
+        type=int,
+        help=f"no probes before this many thinking tokens (default {DEFAULT_PROBE_MIN_TOKENS})",
+    )
     start.add_argument(
         "--probe-k",
         type=int,

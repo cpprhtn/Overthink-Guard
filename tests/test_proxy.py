@@ -252,7 +252,10 @@ def test_openai_options_map_to_ollama_options():
     assert native["messages"][0] == {"role": "system", "content": "s"}
 
 
-@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+PROBE_EVERY_3 = [{"probe": True, "probe_interval": 3, "probe_min_tokens": 0}]
+
+
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
 def test_probing_pauses_probes_and_resumes_transparently(client, fake):
     events = sse_events(chat(client, max_tokens=100).text)
     deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
@@ -276,7 +279,7 @@ def test_probing_pauses_probes_and_resumes_transparently(client, fake):
     assert fake.app.state.hub.stats.summary()["tier2"]["requests"] == 1
 
 
-@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
 def test_failed_probe_is_recorded_without_answer_and_thinking_continues(client, fake):
     fake.probe_status = 500
     events = sse_events(chat(client).text)
@@ -286,7 +289,7 @@ def test_failed_probe_is_recorded_without_answer_and_thinking_continues(client, 
     assert [(p.at_tokens, p.answer) for p in fake.app.state.hub.get("1").probes.probes] == [(3, None)]
 
 
-@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
 def test_failed_resume_ends_the_stream_with_an_error_and_no_shadow(client, fake):
     fake.resume_status = 503
     events = sse_events(chat(client).text)
@@ -299,7 +302,7 @@ def test_failed_resume_ends_the_stream_with_an_error_and_no_shadow(client, fake)
     assert session.shadow is None
 
 
-@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3}])
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
 def test_client_seed_disables_probing(client, fake):
     chat(client, seed=7)
     assert len(fake.bodies("/api/chat")) == 1
@@ -324,3 +327,26 @@ def test_answer_now_is_not_recorded_as_shadow(client, fake):
     chat(client)
     assert fake.app.state.hub.get("1").shadow is None
     assert fake.app.state.hub.stats.summary()["requests"] == 0
+
+
+@pytest.mark.parametrize("app_kwargs", [{"probe": True, "probe_interval": 3, "probe_min_tokens": 5}])
+def test_no_probes_before_the_minimum_thinking_length(client, fake):
+    chat(client)
+    session = fake.app.state.hub.get("1")
+    assert [p.at_tokens for p in session.probes.probes] == [5]
+    resume = fake.bodies("/api/chat")[-1]
+    assert resume["messages"][-1]["content"] == "<think>\n" + "".join(THINKING[:5])
+
+
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
+def test_models_without_verified_prefill_are_only_observed(client, fake):
+    fake.stop_after = 3
+    events = sse_events(chat(client, model="deepseek-r1:1.5b").text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING)
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+    assert len(fake.bodies("/api/chat")) == 1
+    session = fake.app.state.hub.get("1")
+    assert (session.probes, session.probe_skipped, session.intervened) == (None, "template", False)
+    assert fake.app.state.hub.summary(session)["can_intervene"] is False
+    assert session.shadow is not None

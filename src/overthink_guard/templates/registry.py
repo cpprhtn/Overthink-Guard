@@ -16,6 +16,7 @@ class Template:
     think_start: str
     think_end: str
     starts_in_thinking: bool
+    prefill_supported: bool
     stop_thinking_prefix: str
     stop_injection_text: str
     probe_answer_prefix: str
@@ -37,6 +38,7 @@ def _build(raw: dict) -> Template:
         think_start=thinking["start"],
         think_end=thinking["end"],
         starts_in_thinking=bool(thinking.get("starts_in_thinking", False)),
+        prefill_supported=bool(raw["prefill_supported"]),
         stop_thinking_prefix=raw["stop_injection"].get("thinking_prefix", ""),
         stop_injection_text=raw["stop_injection"]["text"],
         probe_answer_prefix=raw["probe"]["answer_prefix"],

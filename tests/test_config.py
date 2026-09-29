@@ -17,6 +17,7 @@ local:
   signals:
     active_probe: true
     probe_interval_tokens: 256
+    probe_min_tokens: 1000
     probe_converge_k: 5
 privacy:
   stats_file: ~/otg/shadow.jsonl
@@ -37,7 +38,7 @@ def test_full_file_is_applied(tmp_path):
     s = load_settings(write(tmp_path, FULL))
     assert (s.host, s.port, s.backend_url) == ("127.0.0.1", 9000, "http://gpu-box:11434")
     assert (s.judge.converge_k, s.judge.repetition_threshold, s.judge.min_thinking_tokens) == (4, 1, 300)
-    assert (s.probe, s.probe_interval, s.probe_converge_k) == (True, 256, 5)
+    assert (s.probe, s.probe_interval, s.probe_min_tokens, s.probe_converge_k) == (True, 256, 1000, 5)
     assert s.stats_file == Path("~/otg/shadow.jsonl").expanduser()
 
 
