@@ -26,6 +26,7 @@
 - v0.2 대부분 완료.
   - Shadow 기록: 끝까지 생각한 요청마다 Tier 0과 탐침이 각각 어디서 끊었을지, 그때 답이 같았는지를 통계로만 로컬 JSONL에 남긴다.
   - UI 누적 요약
+- v0.3 일부 완료: **Auto 모드(runaway guard)**. 실제 폭주 문제(deepseek-r1, 원래 12,000토큰에서도 답 없음)를 7,202토큰에서 끊고 정답을 냈다.
 - 앞당긴 것:
   - Tier 2 능동 탐침: 선택 기능, 기본 꺼짐(`--probe`). 멈춤 → 탐침 → 재개 방식이다. Tier 0이 기대에 못 미쳐(아래) 비교 데이터를 모으려고 v0.3에서 앞당겼다.
   - YAML 설정 파일(6.1의 일부)
@@ -48,9 +49,9 @@
 
 **열린 결정**
 - D12(Tier 0 기본)는 오너 결정으로 유지 중이다. 탐침이 계속 이기면 재논의한다(9장 D12 비고).
-- 탐침 규칙: runaway guard(6,000토큰 이후 k=4)가 사전 등록 검증을 통과해 탐침 기본값이 되었다. **로컬 Auto의 첫 후보**로 오너 결정을 기다린다(D12 비고). 짧은 thinking 안의 과잉 검증을 정확도 손실 없이 줄이는 신호는 아직 없다.
+- **로컬 Auto v1 = runaway guard (D15, 2026-09-30 오너 결정).** `otg start --mode auto`로 켜면, thinking이 6,000토큰을 넘은 뒤 탐침 답이 4회 연속 같을 때 자동으로 "지금 답해"와 같은 경로로 끊는다. 기본 모드는 여전히 Shadow다(D8). 짧은 thinking 안의 과잉 검증을 정확도 손실 없이 줄이는 신호는 아직 없다.
 - gpt-oss와 더 큰 모델은 아직 확인하지 않았다. raw 형식은 템플릿을 손으로 옮긴 것이라, Ollama가 템플릿을 바꾸면 다시 확인해야 한다.
-- v0.3 Auto의 주 신호는 이 결정 뒤에 정한다.
+- 다음 과제: runaway guard의 실제 사용 데이터(Auto 중단 횟수, 사용자 체감), 더 큰 모델에서의 검증, 짧은 thinking용 신호.
 
 **다음 공개(PyPI 0.2.0)**: 성능이 검증된 뒤에 한다(오너 방침).
 
@@ -384,7 +385,7 @@ flowchart LR
 ### 6.1 설정 파일 (가안)
 
 v0.4 구현 상태: `src/overthink_guard/config.py`가 아래 키 중 일부만 받는다.
-- 받는 키: `server.host/port`, `local.backend_url`, `local.auto_stop.*`, `local.signals.active_probe/probe_interval_tokens/probe_min_tokens/probe_converge_k`, `privacy.stats_file`
+- 받는 키: `server.host/port`, `local.backend_url`, `local.mode`(shadow | auto), `local.auto_stop.*`, `local.signals.active_probe/probe_interval_tokens/probe_min_tokens/probe_converge_k`, `privacy.stats_file`
 - 나머지 키는 예정이며, 지금은 **모르는 키로 거부**된다(오타가 조용히 무시되지 않게).
 - `local.backend` 대신 `local.backend_url`을 쓰는데, 지금은 백엔드가 Ollama뿐이기 때문이다.
 
@@ -565,6 +566,7 @@ probe:                         # Tier 2 (선택)
 | D12 | 판정은 추가 생성 없는 신호가 기본: Tier 0 텍스트 신호(잠정 답 반복 추출, n-gram/압축률 반복, 국면 규칙), 가능하면 Tier 1 확률 신호(엔트로피, 종료 토큰 log-prob 마진). 능동 탐침(Tier 2)은 선택 옵션, 기본 꺼짐 (v0.3) | "끊어도 되나" 정도의 판단에 무거운 로컬 연산을 쓸 필요가 없다는 오너의 문제 제기. 탐침은 노트북에서 추론 모델의 추가 생성을 요구해 R4를 유발. 텍스트 신호는 구독형(요약 텍스트만 있음)·API(탐침=비용)까지 **세 환경이 같은 판정기를 공유**하게 해 준다. 모델은 thinking 안에서 이미 중간 답을 스스로 말하는 경우가 많다 | 능동 탐침 기본값(Dynasor/DEER 방식), 반복 판정용 임베딩 모델 기본 탑재 |
 | D13 | 이름은 **Overthink Guard**. 패키지 `overthink-guard`, 모듈 `overthink_guard`, CLI `otg`/`overthink-guard` (2026-09-29) | "safeguard"가 AI 콘텐츠 안전 가드레일을 연상시키는 문제를 피함(15장 #8). 짧은 CLI. PyPI 이름 예약 완료(0.1.0) | Overthinking Safeguard / `osg` |
 | D14 | Tier 2 탐침은 켜졌을 때 **최소 사고량(기본 6,000토큰) 이후 고정 간격**(기본 400토큰)으로 실행하고, 탐침 답이 연속 k번 같으면 수렴으로 본다(기본 k=4). 템플릿에서 prefill이나 raw 형식이 확인된 모델만 탐침·지금 답해를 허용한다(`prefill_supported`, `raw_prompt`) (2026-09-29, 오너 위임으로 결정) | 5.4 원안인 "Tier 0이 애매할 때만"은, Tier 0이 잠정 답을 거의 추출하지 못해(사후 상한 8.1%) 탐침을 사실상 막는다. 초반 탐침 답은 틀린 추측을 2,000토큰 넘게 유지하기도 한다. 처음 17문제로 고른 "k=4, 처음부터"는 held-out에서 정답 2개를 잃었다. 3,000토큰 규칙은 이후 held-out에서 정답을 잃었고, 사전 등록한 6,000토큰 규칙(runaway guard)은 새 문제 70개, 두 모델에서 손실 0이었다. deepseek-r1(Ollama)은 chat prefill 시 엉뚱한 출력을 내서 raw 프롬프트로 지원한다 | Tier 0 결론 표현이 나온 문장 경계에서만 탐침, 처음부터 k=3 또는 k=4, 모든 모델에 개입 |
+| D15 | 로컬 Auto v1은 **runaway guard**다. thinking 6,000토큰 이후 탐침 답이 4회 연속 같으면, 지금 답해와 같은 prefill/raw 주입으로 끊는다. `--mode auto`(또는 `local.mode: auto`)로 켜고, 기본값은 Shadow로 유지한다. 검증된 템플릿에서만 동작한다 (2026-09-30, 오너 결정) | 사전 등록 검증(새 문제 70개, qwen3·deepseek-r1)에서 정상 종료 51개의 정답 손실 0, 폭주 19개 전부 중단(8개 정답). 짧은 thinking까지 줄이는 규칙(A, B)은 매 표본 정답을 1~2개 잃었다. 정확도를 지키면서 "너무 오래 생각하는 것"을 막는 유일한 검증된 신호 | Tier 0 기반 Auto(원래 5.4안, 절감 약 2%), 3,000토큰 이후 k=4(held-out에서 손실), Auto를 기본값으로 |
 
 **D12 비고 (v0.4, 2026-09-29)**
 - 실측 두 번에서 모두 Tier 2 탐침이 Tier 0보다 훨씬 나았다(`docs/spikes/tier0-r1-replay.md`, `s1-s8-t2-ollama.md`, `shadow-live-probe.md`).
@@ -572,6 +574,7 @@ probe:                         # Tier 2 (선택)
   - 탐침: 공격적 규칙은 57~65%지만 held-out에서 정답을 잃었다. 두 표본에서 손실 0인 보수적 규칙은 30~52%(합계 40%). 이 규칙도 아직 검증되지 않았다.
 - **오너 결정: D12는 그대로 유지한다.** 탐침은 선택 기능(`--probe`)으로 두고 Shadow 비교 데이터를 모은다. 추가 테스트에서도 탐침이 계속 이기면 그때 D12를 재논의한다.
 - 새 세션은 이 결정을 다시 묻지 말고, 비교 데이터를 쌓는 방향으로 진행할 것.
+- **v0.4 추가 (2026-09-30)**: 오너가 로컬 Auto의 첫 신호로 runaway guard(Tier 2, D15)를 승인했다. Tier 0은 여전히 관찰·UI 제안·API/구독형용 판정기다. 즉 D12는 "Tier 0이 모든 환경의 공통 판정기"라는 부분은 유지하고, "로컬 Auto의 주 신호"에 대해서만 D15로 대체된다.
 
 ---
 
@@ -799,7 +802,7 @@ v0.4 상태: 백엔드가 Ollama 하나뿐이라 이 인터페이스는 아직 �
 | --- | --- | --- | --- | --- |
 | v0.1 | 동작하는 뼈대 | 12.5 | 12.5 완료 조건 | **완료** |
 | v0.2 | 신뢰 | Shadow 모드, 절약 통계, 잠정 답 타임라인(Tier 0 추출 결과) | Shadow 요약 화면 동작 | **거의 완료**. Shadow 기록·통계·UI 요약·잠정 답 표시. PyPI 0.2.0은 성능 검증 후 공개 |
-| v0.3 | 자동 | Tier 0 신호 완성, Tier 1(S8 결과에 따라), Auto(4조건), 헤드리스, llama.cpp 백엔드, 선택 옵션으로 Tier 2 탐침 | C3, C5 충족 | 일부 앞당김. Tier 2 탐침(선택)은 구현했다. Tier 0이 기대에 못 미쳐 비교 데이터가 먼저 필요했기 때문이다. Tier 1은 S8에서 신호가 없었다. Auto는 주 신호 결정(D12 비고) 뒤에 한다 |
+| v0.3 | 자동 | Tier 0 신호 완성, Tier 1(S8 결과에 따라), Auto(4조건), 헤드리스, llama.cpp 백엔드, 선택 옵션으로 Tier 2 탐침 | C3, C5 충족 | **일부 완료**: Auto = runaway guard(D15), 탐침(선택), 헤드리스 동작. Tier 1은 S8에서 신호 없음. llama.cpp 백엔드는 미착수 |
 | v0.4 | 증명 | 노트북 3종 공개 벤치마크. Tier 0만 / 0+1 / 0+1+2 비교 | C1, C2 판정, Tier 2 기본값 확정 | 진행 중. Apple Silicon에서 Tier 0 vs Tier 2 실측(37문제), held-out 검증 1회(k=4 과적합 확인 → 규칙 수정), CPU 전용 오버헤드(Apple Silicon), deepseek-r1 비호환 확인. 세 번째 표본, x86 CPU, 다른 모델 계열은 미완 |
 | v0.5 | API | API 모드(관측/수동/비용/effort 추천), LM Studio | C6, C7 점검 | 미착수 |
 | v0.6 | 구독형 | S4, S5 결과에 따라 Notify 모드, 훅 이벤트 v1, 레시피 문서(R15 원칙) 또는 사후 분석 모드 | C9 점검 | 미착수 |

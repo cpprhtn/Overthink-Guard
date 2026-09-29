@@ -4,7 +4,7 @@ See when a local reasoning model has already reached its answer, and cut the res
 
 Overthink Guard is a small proxy that sits between your OpenAI-compatible client and [Ollama](https://ollama.com). It shows the model's thinking live, records where it *could* have stopped (Shadow mode), and gives you an **Answer now** button that ends the thinking and gets the answer in a fraction of a second. No GPU needed for the proxy itself; it runs on macOS, Linux and Windows.
 
-> **Status: early.** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3 and DeepSeek-R1); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
+> **Status: early.** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3 and DeepSeek-R1); other models are observed but never interrupted. By default nothing is stopped automatically: Shadow mode only records, and you decide when to press Answer now. Opt into `--mode auto` to have runaway thinking cut automatically.
 
 ## Quick start
 
@@ -44,7 +44,9 @@ To run from a checkout instead: `uv tool install .`
 
 **Shadow mode** (always on). Every request that thinks to completion is recorded: where Overthink Guard *would* have stopped, and whether the answer at that point matched the final one. The UI shows the running totals.
 
-**Active probing** (opt-in, `--probe`). Once thinking passes 6,000 tokens, the generation pauses briefly every 400 tokens. The model is asked for its current answer in a few tokens, and then the thinking resumes where it left off. Probing is off by default because it adds short pauses; the default detector reads only the thinking text.
+**Auto mode** (opt-in, `--mode auto`): a runaway guard. Once thinking passes 6,000 tokens, if the model's probed answer is the same 4 times in a row, Overthink Guard does an automatic Answer now. It leaves normal-length thinking alone. In a pre-registered test on 70 fresh problems it cost no correct answers, and it turned 8 of 19 runaway runs, which would otherwise have produced nothing, into correct answers. The final chunk's `otg.auto` is `true` when this happens.
+
+**Active probing** (opt-in, `--probe`; always on in Auto mode). Once thinking passes 6,000 tokens, the generation pauses briefly every 400 tokens. The model is asked for its current answer in a few tokens, and then the thinking resumes where it left off. Probing is off by default because it adds short pauses; the default detector reads only the thinking text.
 
 ## Measured so far
 
@@ -70,6 +72,7 @@ server:
   port: 8484
 local:
   backend_url: http://localhost:11434
+  mode: shadow                # shadow | auto
   auto_stop:                  # text-only detector (shown as "Looks safe to stop" in the UI)
     converge_k: 3
     min_thinking_tokens: 300
