@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "overthink-guard"
+version = "0.1.0"
+description = "Overthink Guard"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+authors = [{ name = "Junwon Lee", email = "cpprhtn@gmail.com" }]
+
+[project.scripts]
+overthink-guard = "overthink_guard.cli:main"
+otg = "overthink_guard.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/overthink_guard"]
