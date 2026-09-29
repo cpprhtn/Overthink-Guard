@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "overthink-guard"
-version = "0.1.0"
-description = "Overthink Guard"
+dynamic = ["version"]
+description = "See and stop overthinking in local reasoning models: a Shadow/Answer-now proxy for Ollama"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -13,11 +13,14 @@ authors = [{ name = "Junwon Lee", email = "cpprhtn@gmail.com" }]
 dependencies = ["pyyaml>=6", "httpx>=0.27", "starlette>=0.37", "uvicorn>=0.30"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 overthink-guard = "overthink_guard.cli:main"
 otg = "overthink_guard.cli:main"
+
+[tool.hatch.version]
+path = "src/overthink_guard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/overthink_guard"]
@@ -27,6 +30,12 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+# One-off spike scripts are kept as they were run.
+extend-exclude = ["bench/spikes"]
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "RUF"]
+
+# Read by editors running pylint; keeps their line limit in step with ruff.
 [tool.pylint.format]
 max-line-length = 120

@@ -42,7 +42,9 @@ def traces_of(rows: list[dict]) -> list[tuple[str, bool]]:
     return [
         (gen, bool(ok))
         for row in rows
-        for gen, done, ok in zip(row["generations"], row["is_reasoning_complete"], row["correctness_math_verify"])
+        for gen, done, ok in zip(
+            row["generations"], row["is_reasoning_complete"], row["correctness_math_verify"], strict=False
+        )
         if done and "</think>" in gen
     ]
 
@@ -52,7 +54,9 @@ def first_mention_bound(rows: list[dict]) -> tuple[int, float, list[float]]:
     positions = []
     for row in rows:
         problem_numbers = set(re.findall(r"\d+(?:\.\d+)?", row["problem"]))
-        for gen, done, ok in zip(row["generations"], row["is_reasoning_complete"], row["correctness_math_verify"]):
+        for gen, done, ok in zip(
+            row["generations"], row["is_reasoning_complete"], row["correctness_math_verify"], strict=False
+        ):
             if not (done and ok and "</think>" in gen):
                 continue
             think, answer = gen.split("</think>", 1)
@@ -112,7 +116,7 @@ def main() -> None:
     print(f"first mention of final value in thinking ({count} traces): {quartiles}; loose bound {bound:.1%}")
 
     generic = get_template("generic")
-    loose = replace(generic, answer_patterns=generic.answer_patterns + (LOOSE_NUMERIC,))
+    loose = replace(generic, answer_patterns=(*generic.answer_patterns, LOOSE_NUMERIC))
     print(f"extractor hindsight bound: generic {extractor_bound(traces, generic):.1%}")
 
     base = JudgeConfig()
