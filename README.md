@@ -4,7 +4,7 @@ See when a local reasoning model has already reached its answer, and cut the res
 
 Overthink Guard is a small proxy that sits between your OpenAI-compatible client and [Ollama](https://ollama.com). It shows the model's thinking live, records where it *could* have stopped (Shadow mode), and gives you an **Answer now** button that ends the thinking and gets the answer in a fraction of a second. No GPU needed for the proxy itself; it runs on macOS, Linux and Windows.
 
-> **Status: early (0.2.0).** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
+> **Status: early.** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3 and DeepSeek-R1); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
 
 ## Quick start
 
@@ -95,7 +95,7 @@ privacy:
 ## Known limitations
 
 - Ollama only. llama.cpp server and LM Studio are planned.
-- Answer now and probing rely on the model's chat template accepting a prefilled assistant turn. This is verified for Qwen3. It does not work for Ollama's DeepSeek-R1 template, so those models, and any model not yet verified, are observed only.
+- Answer now and probing need a verified way to continue the model's own thinking. Qwen3 uses Ollama's chat template (prefilled assistant turn). DeepSeek-R1's Ollama template cannot do that, so its prompt is rendered by hand and sent raw. Models that are not verified yet are observed only.
 - Intervention covers streamed single-turn text chat; everything else passes through.
 - No CORS headers, so browser apps that call the proxy directly from a page will not work. Server-side clients are fine.
 - When a request is intervened or probed, `usage.prompt_tokens` is an estimate, because Ollama does not report it for a cut stream.

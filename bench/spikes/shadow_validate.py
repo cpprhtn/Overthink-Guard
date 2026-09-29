@@ -18,14 +18,14 @@ from overthink_guard.analysis.signals import extract_boxed, normalize_answer
 MULTIPLE_CHOICE = re.compile(r"\(A\)|\bA[.)]\s|\(a\)|options|choices", re.I)
 
 
-def held_out(cache: Path, skip: int, count: int) -> list[tuple[str, str]]:
+def held_out(cache: Path, skip: int, start: int, count: int) -> list[tuple[str, str]]:
     rows = []
     files = sorted(glob.glob(str(cache / "openr1_math_*.json")), key=lambda p: int(re.search(r"_(\d+)\.json", p)[1]))
     for f in files:
         rows += [r["row"] for r in json.loads(Path(f).read_text(encoding="utf-8"))["rows"]]
     short = [(r["problem"], r["answer"].strip()) for r in rows if re.fullmatch(r"-?\d+", r["answer"].strip())]
     short = [p for p in short if len(p[0]) < 260]
-    return [p for p in short[skip:] if not MULTIPLE_CHOICE.search(p[0])][:count]
+    return [p for p in short[skip:] if not MULTIPLE_CHOICE.search(p[0])][start : start + count]
 
 
 def session_state(proxy: str, session: str) -> tuple[dict, list]:
@@ -51,14 +51,15 @@ def main() -> None:
     parser.add_argument("--model", default="qwen3:1.7b")
     parser.add_argument("--cache", type=Path, default=Path(".bench-cache"))
     parser.add_argument("--skip", type=int, default=12, help="integer-answer problems already used for tuning")
+    parser.add_argument("--start", type=int, default=0, help="offset into the held-out list (0-29 used on 2026-09-29)")
     parser.add_argument("--count", type=int, default=30)
     parser.add_argument("--max-tokens", type=int, default=12000, help="caps runaway thinking loops")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
     client = OpenAI(base_url=f"{args.proxy}/v1", api_key="unused")
-    data = {"note": f"{args.model}, held-out OpenR1 problems after the first {args.skip}", "problems": [], "ungradable": []}
-    for i, (question, gold) in enumerate(held_out(args.cache, args.skip, args.count)):
+    data = {"note": f"{args.model}, held-out OpenR1 problems {args.start}-{args.start + args.count - 1} after the first {args.skip}", "problems": [], "ungradable": []}
+    for i, (question, gold) in enumerate(held_out(args.cache, args.skip, args.start, args.count)):
         content, session = "", None
         messages = [{"role": "user", "content": question}]
         stream = client.chat.completions.create(

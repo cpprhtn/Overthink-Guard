@@ -148,11 +148,33 @@ Ollama 0.34.4의 `deepseek-r1:1.5b` 템플릿에는 세 가지 특징이 있다.
 - 탐침은 하지 않는다(`probe_skipped: template`).
 - Shadow Tier 0 관찰만 한다.
 
-엉뚱한 답을 내는 것보다 개입하지 않는 쪽이 안전하다(C1, C7). deepseek-r1 지원은 raw 모드 백엔드가 필요하다(후속 작업).
+엉뚱한 답을 내는 것보다 개입하지 않는 쪽이 안전하다(C1, C7).
+
+### 후속: raw 모드로 deepseek-r1 지원 (2026-09-30)
+
+스크립트: `bench/spikes/r1_raw_spike.py`, `bench/spikes/r1_live_check.py`
+
+**raw 프롬프트 검증**
+- `<｜User｜>{질문}<｜Assistant｜>` 형식을 BOS 없이 보내면, Ollama chat 렌더링과 prompt 토큰 수가 같다(18 = 18). 시스템 메시지가 있을 때도 같다(18 = 18).
+  - Ollama가 BOS를 스스로 붙이므로, BOS 문자열을 넣으면 오히려 1토큰 많아진다.
+- `/api/generate`에 `raw: true`로 보내도 Ollama는 thinking을 `thinking` 필드로 분리한다.
+- 주입과 재개에는 `"<think>\n"`을 다시 붙여야 한다. 그러면 원래 생성 시퀀스와 정렬되어 캐시가 맞는다(418/428). 빼면 캐시가 깨진다(18/426). qwen3의 `"\n"` 정렬과 같은 원리다.
+- 지금 답해의 답변은 `response` 필드로 온다. 재개의 이어 쓰기도 `response`에 태그와 함께 온다(qwen3 재개와 같은 모양).
+
+**구현**: 템플릿에 `raw_prompt`(system/user/assistant 형식)를 두면 `RawPrompt` 요청 방식을 쓴다. 이때 원래 요청부터 raw로 보내 캐시를 공유한다. `prefill_supported`나 `raw_prompt`가 있으면 개입할 수 있다(`Template.can_intervene`).
+
+**프록시 실측** (deepseek-r1:1.5b)
+
+| 시나리오 | 결과 |
+| --- | --- |
+| 탐침 켜고 끝까지 | 탐침 0.17초, 답 `36`. 재개 후 이어서 생각하고 정답(36) |
+| 150청크 뒤 지금 답해 | 0.13초 만에 첫 답변, 캐시 169/179, 정답(45) |
+
+**주의**: raw 형식은 모델 템플릿을 손으로 옮긴 것이다. Ollama가 모델의 템플릿을 바꾸면 어긋날 수 있다. 시스템 메시지가 여러 개면 마지막 것만 쓴다(원래 템플릿의 동작과 같다). 멀티턴은 원래 개입하지 않는다(D9).
 
 ## 아직 확인하지 않은 것
 
 1. ~~더 크고 어려운 문제 세트~~ → `shadow-live-probe.md`(37문제)에서 측정했다. 다른 모델: deepseek-r1은 prefill 불가로 확인. gpt-oss와 더 큰 qwen3는 미확인.
 2. ~~CPU 전용 탐침 비용~~ → Apple Silicon CPU에서 약 5%. x86 노트북은 미확인.
 3. S2(llama.cpp), S3(LM Studio).
-4. deepseek-r1 계열을 위한 raw 모드 백엔드(템플릿 재구성 + 원래 요청도 raw로 보내 캐시 정렬).
+4. ~~deepseek-r1 계열을 위한 raw 모드 백엔드~~ → 구현하고 deepseek-r1:1.5b에서 확인했다(위 "후속" 절). 더 큰 R1 distill(7b, 8b 등)은 미확인이지만 템플릿은 같다.
