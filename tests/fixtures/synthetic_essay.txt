@@ -1,0 +1,21 @@
+<think>
+The user wants a short explanation of why caching improves web performance. I need to cover what a cache is, where caches live, and the tradeoffs.
+
+A cache stores copies of responses closer to where they are needed. Browsers keep a local cache, CDNs keep edge caches near users, and servers can cache computed results in memory.
+
+The main benefit is avoiding repeated work and network round trips. A cached asset can be served in milliseconds instead of hundreds of milliseconds across the internet.
+
+The tradeoff is staleness. If the underlying data changes, cached copies may serve outdated content, so headers like Cache-Control and validation with ETags matter.
+
+Let me think about how to structure this. Maybe start with the definition, then the layers, then the staleness tradeoff, and end with a practical tip about cache headers.
+
+I should also mention that caching reduces load on the origin server, which helps under traffic spikes. That is often as important as latency for real systems.
+
+I think the structure is fine. Definition, layers, benefits for latency and load, then staleness and how headers control it. That covers the question well without going too deep.
+
+One more consideration: private versus shared caches. Personalized responses should not be stored in shared caches, which is what the private directive is for. I will add a sentence on that.
+
+Alright, the outline is complete and covers definition, layers, benefits, staleness, and the private directive.
+</think>
+
+Caching speeds up the web by keeping copies of responses closer to users...

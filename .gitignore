@@ -1,4 +1,6 @@
+.venv/
 .venv-publish/
+.pytest_cache/
 dist/
 build/
 *.egg-info/

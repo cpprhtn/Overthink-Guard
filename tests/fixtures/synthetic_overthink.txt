@@ -1,0 +1,23 @@
+<think>
+Okay, so the question asks how many apples Sarah has left. She starts with 3 bags of 4 apples each, then gives away 5 apples to her friend Tom, and later buys 2 more apples at the market. We need to track the total step by step.
+
+First, the starting amount. She has 3 bags and each bag holds 4 apples, so that's 3 times 4 which is 12 apples in total at the beginning.
+
+Next, she gives away 5 apples to Tom. So 12 minus 5 is 7 apples remaining after the gift.
+
+Then she buys 2 more apples at the market. So 7 plus 2 is 9 apples. So the answer is 9.
+
+Wait, let me verify again. She starts with 3 bags of 4 apples each, so that's 3 times 4 which is 12 apples. Then she gives away 5 apples, 12 minus 5 is 7, plus 2 is 9. So the answer is 9.
+
+Hmm, let me double-check once more. She starts with 3 bags of 4 apples each, so 3 times 4 which is 12 apples. Then she gives away 5 apples, 12 minus 5 is 7, and she buys 2, 7 plus 2 is 9. So the answer is 9.
+
+Wait, let me verify again just to be sure. 3 bags of 4 apples each is 12 apples. She gives away 5 apples, 12 minus 5 is 7. Then plus 2 is 9. So the answer is 9.
+
+Hmm, let me double-check once more. 3 times 4 which is 12 apples, 12 minus 5 is 7, 7 plus 2 is 9. So the answer is 9.
+
+Wait, let me verify again. 3 bags of 4 apples each is 12, minus 5 is 7, plus 2 is 9. So the answer is 9.
+
+Let me double-check once more. 12 apples, give away 5 leaves 7, buy 2 gives 9. So the answer is 9.
+</think>
+
+Sarah has 3 × 4 = 12 apples, gives away 5 (leaving 7), then buys 2 more. The answer is 9.

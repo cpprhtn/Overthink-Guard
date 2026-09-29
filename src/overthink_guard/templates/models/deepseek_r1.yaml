@@ -1,0 +1,9 @@
+# The R1 chat template pre-inserts "<think>\n" into the prompt, so output starts
+# mid-thinking and only "</think>" appears. Unverified for Ollama's template (spike S1).
+id: deepseek_r1
+extends: generic
+match: ["deepseek-r1*", "deepseek-reasoner*"]
+thinking:
+  start: "<think>"
+  end: "</think>"
+  starts_in_thinking: true
