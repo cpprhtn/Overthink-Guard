@@ -22,6 +22,10 @@ otg = "overthink_guard.cli:main"
 [tool.hatch.version]
 path = "src/overthink_guard/__init__.py"
 
+# Allowlist, so untracked local files (notes, data) never end up in a published sdist.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/overthink_guard"]
 

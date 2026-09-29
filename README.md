@@ -4,7 +4,7 @@ See when a local reasoning model has already reached its answer, and cut the res
 
 Overthink Guard is a small proxy that sits between your OpenAI-compatible client and [Ollama](https://ollama.com). It shows the model's thinking live, records where it *could* have stopped (Shadow mode), and gives you an **Answer now** button that ends the thinking and gets the answer in a fraction of a second. No GPU needed for the proxy itself; it runs on macOS, Linux and Windows.
 
-> **Status: early (0.2.0.dev0).** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
+> **Status: early (0.2.0).** Ollama is the only backend. Answer now and probing are enabled only for model families where they have been verified to work (currently Qwen3); other models are observed but never interrupted. Nothing is stopped automatically yet: Shadow mode only records, and you decide when to press Answer now.
 
 ## Quick start
 
@@ -31,7 +31,7 @@ for chunk in stream:
     ...  # thinking arrives in delta.reasoning, the answer in delta.content
 ```
 
-Until 0.2.0 is published, the PyPI package is a name placeholder, so install from a checkout instead: `uv tool install .`
+To run from a checkout instead: `uv tool install .`
 
 ## What it does to your requests
 
