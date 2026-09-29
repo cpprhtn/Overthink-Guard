@@ -8,6 +8,8 @@ from pathlib import Path
 
 from overthink_guard import __version__
 from overthink_guard.analysis import JudgeConfig, ReplayReport, replay
+from overthink_guard.analysis.prober import DEFAULT_PROBE_K
+from overthink_guard.config import ConfigError, Settings, default_config_path, load_settings
 from overthink_guard.templates import get_template, template_ids
 
 
@@ -104,27 +106,62 @@ def _analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def resolve_settings(args: argparse.Namespace) -> Settings:
+    """Defaults, then the config file, then any flags given explicitly."""
+    if args.config is not None and not args.config.exists():
+        raise ConfigError(f"config file not found: {args.config}")
+    settings = load_settings(args.config or default_config_path())
+    for flag, attr in [
+        ("host", "host"),
+        ("port", "port"),
+        ("backend_url", "backend_url"),
+        ("probe", "probe"),
+        ("probe_interval", "probe_interval"),
+        ("probe_k", "probe_converge_k"),
+        ("stats_file", "stats_file"),
+    ]:
+        if getattr(args, flag) is not None:
+            setattr(settings, attr, getattr(args, flag))
+    if args.no_stats:
+        settings.stats_file = None
+    return settings
+
+
 def _start(args: argparse.Namespace) -> int:
     import httpx
     import uvicorn
 
     from overthink_guard.proxy import create_app
+    from overthink_guard.storage import ShadowStats
 
     try:
-        version = httpx.get(f"{args.backend_url.rstrip('/')}/api/version", timeout=3).json()["version"]
-        print(f"✓ Ollama {version} at {args.backend_url}")
+        s = resolve_settings(args)
+    except ValueError as exc:
+        print(f"config error: {exc}", file=sys.stderr)
+        return 2
+    try:
+        version = httpx.get(f"{s.backend_url.rstrip('/')}/api/version", timeout=3).json()["version"]
+        print(f"✓ Ollama {version} at {s.backend_url}")
     except (httpx.HTTPError, ValueError, KeyError):
-        print(f"! Ollama not reachable at {args.backend_url} yet; requests will fail until it is up")
-    base = f"http://{args.host}:{args.port}"
+        print(f"! Ollama not reachable at {s.backend_url} yet; requests will fail until it is up")
+    base = f"http://{s.host}:{s.port}"
     print(f"→ proxy: {base}/v1   (set this as your client's base URL)")
     print(f"→ UI:    {base}/ui")
-    print("→ mode:  watch (nothing is stopped unless you press 'Answer now')")
-    uvicorn.run(
-        create_app(args.backend_url, host=args.host, port=args.port),
-        host=args.host,
-        port=args.port,
-        log_level="warning",
+    print("→ mode:  shadow (nothing is stopped unless you press 'Answer now'; would-stop points are recorded)")
+    if s.probe:
+        print(f"→ probe: every {s.probe_interval} thinking tokens, k={s.probe_converge_k} (Tier 2, adds short pauses)")
+    print(f"→ stats: {s.stats_file or 'memory only'} (counts only, no text)", flush=True)
+    app = create_app(
+        s.backend_url,
+        host=s.host,
+        port=s.port,
+        stats=ShadowStats(s.stats_file),
+        judge_config=s.judge,
+        probe=s.probe,
+        probe_interval=s.probe_interval,
+        probe_converge_k=s.probe_converge_k,
     )
+    uvicorn.run(app, host=s.host, port=s.port, log_level="warning")
     return 0
 
 
@@ -147,10 +184,24 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--json", action="store_true", help="machine-readable output")
     analyze.set_defaults(func=_analyze)
 
-    start = sub.add_parser("start", help="run the local proxy and UI in front of Ollama")
-    start.add_argument("--host", default="127.0.0.1")
-    start.add_argument("--port", type=int, default=8484)
-    start.add_argument("--backend-url", default="http://localhost:11434")
+    start = sub.add_parser(
+        "start", help="run the local proxy and UI in front of Ollama (flags override the config file)"
+    )
+    start.add_argument("--config", type=Path, help=f"YAML settings (default: {default_config_path()})")
+    start.add_argument("--host", help="default 127.0.0.1")
+    start.add_argument("--port", type=int, help="default 8484")
+    start.add_argument("--backend-url", help="default http://localhost:11434")
+    start.add_argument(
+        "--probe", action=argparse.BooleanOptionalAction, help="opt-in Tier 2 active probing (off by default, D12)"
+    )
+    start.add_argument("--probe-interval", type=int, help="thinking tokens between probes (default 400)")
+    start.add_argument(
+        "--probe-k",
+        type=int,
+        help=f"identical probe answers in a row to count as converged (default {DEFAULT_PROBE_K})",
+    )
+    start.add_argument("--stats-file", type=Path, help="where Shadow statistics are appended (JSONL)")
+    start.add_argument("--no-stats", action="store_true", help="keep Shadow statistics in memory only")
     start.set_defaults(func=_start)
     return parser
 
