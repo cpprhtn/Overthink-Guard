@@ -1,6 +1,7 @@
 .venv/
 .venv-publish/
 .pytest_cache/
+.bench-cache/
 dist/
 build/
 *.egg-info/

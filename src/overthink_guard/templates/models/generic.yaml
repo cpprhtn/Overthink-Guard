@@ -7,10 +7,13 @@ thinking:
 stop_injection:
   text: "\n\nI have enough to answer now.\n</think>\n\n"
 extract_boxed: true
+# Longer captures are prose ("the answer is unique, but ..."), not answers.
+max_answer_chars: 40
+# "therefore x = 3" style patterns were dropped: on R1 traces they mostly catch intermediate
+# assignments and double the at-stop/final disagreement (docs/spikes/tier0-r1-replay.md).
 tentative_answer_patterns:
   - '(?i)\b(?:so|thus|therefore|hence),?\s+the\s+(?:final\s+)?answer\s+(?:is|should be|would be)\s*:?\s*(?P<ans>.+?)(?:\.(?:\s|$)|\n|$)'
   - '(?i)\bthe\s+(?:final\s+)?answer\s+is\s*:?\s*(?P<ans>.+?)(?:\.(?:\s|$)|\n|$)'
-  - '(?i)\b(?:so|thus|therefore|hence),?\s+(?P<ans>[a-z]\s*=\s*-?[\d.,/]+)'
 revision_patterns:
   - '(?i)\b(?:that|this|it)(?:''s| is| was) (?:wrong|incorrect|not (?:right|correct))\b'
   - '(?i)\bi made an? (?:mistake|error)\b'

@@ -18,6 +18,7 @@ class Template:
     starts_in_thinking: bool
     stop_injection_text: str
     extract_boxed: bool
+    max_answer_chars: int
     answer_patterns: tuple[re.Pattern[str], ...]
     revision_patterns: tuple[re.Pattern[str], ...]
 
@@ -32,6 +33,7 @@ def _build(raw: dict) -> Template:
         starts_in_thinking=bool(thinking.get("starts_in_thinking", False)),
         stop_injection_text=raw["stop_injection"]["text"],
         extract_boxed=bool(raw.get("extract_boxed", False)),
+        max_answer_chars=int(raw.get("max_answer_chars", 40)),
         answer_patterns=tuple(re.compile(p) for p in raw.get("tentative_answer_patterns", [])),
         revision_patterns=tuple(re.compile(p) for p in raw.get("revision_patterns", [])),
     )

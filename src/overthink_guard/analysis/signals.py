@@ -42,7 +42,7 @@ def extract_tentative_answer(text: str, template: Template) -> str | None:
             candidates.append((match.start(), match.group(group)))
     for _, raw in sorted(candidates, key=lambda c: c[0], reverse=True):
         normalized = normalize_answer(raw)
-        if normalized:
+        if normalized and len(normalized) <= template.max_answer_chars:
             return normalized
     return None
 

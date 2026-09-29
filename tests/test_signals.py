@@ -26,7 +26,8 @@ def test_unclosed_boxed_is_ignored():
     [
         ("So the answer is 9.", "9"),
         ("Therefore, the final answer is 3.5. Done", "3.5"),
-        ("Thus x = 3, which fits.", "x=3"),
+        ("Thus x = 3, which fits.", None),
+        ("So the answer is 7. The answer is unique because the constraint pins down every variable.", "7"),
         (r"First 7, then \boxed{\frac{1}{2}}", r"\frac{1}{2}"),
         ("So the answer is 9. Wait, so the answer is 11.", "11"),
         ("The answer is **New York**.", "newyork"),
