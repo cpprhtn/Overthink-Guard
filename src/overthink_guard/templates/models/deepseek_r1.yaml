@@ -1,9 +1,15 @@
 # The R1 chat template pre-inserts "<think>\n" into the prompt, so output starts
 # mid-thinking and only "</think>" appears.
 # Ollama 0.34.4's deepseek-r1 template drops the thinking field and always closes the assistant turn, so a prefilled
-# answer ignores the thinking and a resume restarts it. Raw prompts work but need the template rebuilt by hand.
+# answer ignores the thinking and a resume restarts it. Instead the prompt is rendered by hand and sent raw.
+# Verified on deepseek-r1:1.5b: same prompt token count as Ollama's chat rendering (with and without a system
+# message; Ollama adds BOS itself), answers after injection were correct, and resume and probe hit the cache.
 id: deepseek_r1
 prefill_supported: false
+raw_prompt:
+  system: "{content}"
+  user: "<｜User｜>{content}"
+  assistant: "<｜Assistant｜>"
 extends: generic
 match: ["deepseek-r1*", "deepseek-reasoner*"]
 thinking:

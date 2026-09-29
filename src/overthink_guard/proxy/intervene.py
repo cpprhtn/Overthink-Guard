@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from overthink_guard.analysis import Probe, read_probe_answer
-from overthink_guard.backends import OllamaBackend, answer_prefill, iter_chunks, probe_request, resume_request
+from overthink_guard.backends import ChatPrefill, OllamaBackend, RawPrompt, chunk_text, iter_chunks
 from overthink_guard.control.session import ANSWERING, CANCELLED, DONE, ERROR, THINKING, Session, SessionHub
 from overthink_guard.stream import ThinkStreamParser
 from overthink_guard.templates import Template
@@ -16,7 +16,7 @@ _DONE, _STOP, _PROBE, _ERROR = "done", "stop", "probe", "error"
 
 
 class InterventionStream:
-    """Relays Ollama chat as OpenAI SSE; may pause to probe and resume, or splice in an answer on "Answer now"."""
+    """Relays an Ollama stream as OpenAI SSE; may pause to probe and resume, or splice in an answer on "Answer now"."""
 
     def __init__(
         self,
@@ -25,7 +25,7 @@ class InterventionStream:
         session: Session,
         backend: OllamaBackend,
         response: httpx.Response,
-        native: dict,
+        requests: ChatPrefill | RawPrompt,
         template: Template,
         include_usage: bool,
         probe_interval: int = 400,
@@ -35,7 +35,7 @@ class InterventionStream:
         self._session = session
         self._backend = backend
         self._response = response
-        self._native = native
+        self._requests = requests
         self._template = template
         self._include_usage = include_usage
         self._probe_interval = probe_interval
@@ -85,12 +85,12 @@ class InterventionStream:
                 self._error = str(chunk["error"])
                 yield _ERROR
                 return
-            message = chunk.get("message") or {}
+            thinking, content = chunk_text(chunk)
             events: list[tuple[str, str]] = []
             if parser is None:
-                events = [("thinking", message.get("thinking") or ""), ("answer", message.get("content") or "")]
+                events = [("thinking", thinking), ("answer", content)]
             else:
-                pieces = parser.feed(message.get("content") or "")
+                pieces = parser.feed(content)
                 if chunk.get("done"):
                     pieces += parser.finish()
                 events = [(e.kind, e.text) for e in pieces]
@@ -126,9 +126,9 @@ class InterventionStream:
         session = self._session
         started = time.monotonic()
         try:
-            result = await self._backend.complete(probe_request(self._native, session.thinking, self._template))
+            result = await self._backend.complete(self._requests.probe(session.thinking))
             self._estimate_prompt(result)
-            answer = read_probe_answer(result["message"]["content"])
+            answer = read_probe_answer(chunk_text(result)[1])
         except (httpx.HTTPError, KeyError, ValueError):
             answer = None
         self._last_probe_at = session.judge.thinking_tokens
@@ -157,9 +157,7 @@ class InterventionStream:
                 if session.stop_requested.is_set():
                     outcome = _STOP
                     break
-                response = await self._backend.open_chat(
-                    resume_request(self._native, session.thinking, self._template, self._generated)
-                )
+                response = await self._backend.open(self._requests.resume(session.thinking, self._generated))
                 if response.status_code != 200:
                     await response.aclose()
                     self._error = f"resume request failed with HTTP {response.status_code}"
@@ -209,8 +207,7 @@ class InterventionStream:
         session = self._session
         session.intervened = True
         self._hub.set_status(session, ANSWERING)
-        body = answer_prefill(self._native, session.thinking, self._template, self._generated)
-        response = await self._backend.open_chat(body)
+        response = await self._backend.open(self._requests.answer(session.thinking, self._generated))
         try:
             if response.status_code != 200:
                 self._error = f"answer request failed with HTTP {response.status_code}"

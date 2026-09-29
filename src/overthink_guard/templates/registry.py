@@ -10,6 +10,13 @@ import yaml
 
 
 @dataclass(frozen=True)
+class RawFormat:
+    system: str
+    user: str
+    assistant: str
+
+
+@dataclass(frozen=True)
 class Template:
     id: str
     match: tuple[str, ...]
@@ -17,6 +24,7 @@ class Template:
     think_end: str
     starts_in_thinking: bool
     prefill_supported: bool
+    raw: RawFormat | None
     stop_thinking_prefix: str
     stop_injection_text: str
     probe_answer_prefix: str
@@ -26,6 +34,11 @@ class Template:
     max_answer_chars: int
     answer_patterns: tuple[re.Pattern[str], ...]
     revision_patterns: tuple[re.Pattern[str], ...]
+
+    @property
+    def can_intervene(self) -> bool:
+        """Answer now and probing need either a prefill-capable chat template or a verified raw prompt format."""
+        return self.prefill_supported or self.raw is not None
 
 
 def _build(raw: dict) -> Template:
@@ -39,6 +52,7 @@ def _build(raw: dict) -> Template:
         think_end=thinking["end"],
         starts_in_thinking=bool(thinking.get("starts_in_thinking", False)),
         prefill_supported=bool(raw["prefill_supported"]),
+        raw=RawFormat(**raw["raw_prompt"]) if raw.get("raw_prompt") else None,
         stop_thinking_prefix=raw["stop_injection"].get("thinking_prefix", ""),
         stop_injection_text=raw["stop_injection"]["text"],
         probe_answer_prefix=raw["probe"]["answer_prefix"],

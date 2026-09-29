@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 import httpx
 
@@ -90,17 +91,103 @@ def resume_request(native: dict, thinking: str, template: Template, generated_to
     return body
 
 
+@dataclass(frozen=True)
+class Call:
+    path: str
+    body: dict
+
+
+def _with_budget(native: dict, body: dict, generated_tokens: int) -> dict:
+    budget = native.get("options", {}).get("num_predict")
+    if budget is not None:
+        body["options"] = {**native["options"], "num_predict": max(1, budget - generated_tokens)}
+    return body
+
+
+class ChatPrefill:
+    """Builds requests for templates whose chat rendering accepts a prefilled assistant turn (qwen3)."""
+
+    def __init__(self, native: dict, template: Template) -> None:
+        self._native = native
+        self._template = template
+
+    def original(self) -> Call:
+        return Call("/api/chat", self._native)
+
+    def answer(self, thinking: str, generated_tokens: int) -> Call:
+        return Call("/api/chat", answer_prefill(self._native, thinking, self._template, generated_tokens))
+
+    def probe(self, thinking: str) -> Call:
+        return Call("/api/chat", probe_request(self._native, thinking, self._template))
+
+    def resume(self, thinking: str, generated_tokens: int) -> Call:
+        return Call("/api/chat", resume_request(self._native, thinking, self._template, generated_tokens))
+
+
+class RawPrompt:
+    """Renders the template's raw_prompt for /api/generate; the original goes raw too so later calls hit its cache."""
+
+    def __init__(self, native: dict, template: Template) -> None:
+        assert template.raw is not None
+        self._native = native
+        self._template = template
+        raw = template.raw
+        system = next((m["content"] for m in reversed(native["messages"]) if m["role"] == "system"), "")
+        user = next(m["content"] for m in native["messages"] if m["role"] == "user")
+        self._prompt = raw.system.format(content=system) + raw.user.format(content=user) + raw.assistant
+
+    def _body(self, prompt: str, stream: bool = True) -> dict:
+        body = {"model": self._native["model"], "prompt": prompt, "raw": True, "stream": stream}
+        if "options" in self._native:
+            body["options"] = dict(self._native["options"])
+        return body
+
+    def _thinking(self, thinking: str) -> str:
+        t = self._template
+        return self._prompt + t.think_start + t.stop_thinking_prefix + thinking
+
+    def _closed(self, thinking: str) -> str:
+        t = self._template
+        return self._thinking(thinking.rstrip()) + t.stop_injection_text + "\n" + t.think_end + "\n\n"
+
+    def original(self) -> Call:
+        return Call("/api/generate", self._body(self._prompt))
+
+    def answer(self, thinking: str, generated_tokens: int) -> Call:
+        return Call("/api/generate", _with_budget(self._native, self._body(self._closed(thinking)), generated_tokens))
+
+    def probe(self, thinking: str) -> Call:
+        body = self._body(self._closed(thinking) + self._template.probe_answer_prefix, stream=False)
+        body["options"] = {"num_predict": self._template.probe_max_tokens, "temperature": 0}
+        return Call("/api/generate", body)
+
+    def resume(self, thinking: str, generated_tokens: int) -> Call:
+        return Call("/api/generate", _with_budget(self._native, self._body(self._thinking(thinking)), generated_tokens))
+
+
+def requests_for(native: dict, template: Template) -> ChatPrefill | RawPrompt:
+    return RawPrompt(native, template) if template.raw is not None else ChatPrefill(native, template)
+
+
+def chunk_text(chunk: dict) -> tuple[str, str]:
+    """(thinking, content) from an /api/chat or /api/generate chunk."""
+    if "message" in chunk:
+        message = chunk["message"] or {}
+        return message.get("thinking") or "", message.get("content") or ""
+    return chunk.get("thinking") or "", chunk.get("response") or ""
+
+
 class OllamaBackend:
     def __init__(self, client: httpx.AsyncClient, base_url: str) -> None:
         self._client = client
         self._base_url = base_url.rstrip("/")
 
-    async def open_chat(self, body: dict) -> httpx.Response:
-        request = self._client.build_request("POST", f"{self._base_url}/api/chat", json=body)
+    async def open(self, call: Call) -> httpx.Response:
+        request = self._client.build_request("POST", self._base_url + call.path, json=call.body)
         return await self._client.send(request, stream=True)
 
-    async def complete(self, body: dict) -> dict:
-        response = await self._client.post(f"{self._base_url}/api/chat", json=body)
+    async def complete(self, call: Call) -> dict:
+        response = await self._client.post(self._base_url + call.path, json=call.body)
         response.raise_for_status()
         return response.json()
 

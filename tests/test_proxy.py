@@ -53,6 +53,8 @@ class FakeOllama:
     async def handler(self, request: httpx.Request) -> httpx.Response:
         await request.aread()
         self.requests.append(request)
+        if request.url.path == "/api/generate":
+            return self.generate(json.loads(request.content))
         if request.url.path != "/api/chat":
             echo = b'{"echo": ' + (request.content or b"null") + b"}"
             return httpx.Response(
@@ -84,6 +86,36 @@ class FakeOllama:
             yield ndjson(content_chunk("408"), DONE)
 
         return httpx.Response(200, content=stream())
+
+
+def generate_chunk(thinking: str = "", response: str = "") -> dict:
+    return {"thinking": thinking, "response": response, "done": False}
+
+
+def _generate(self, body: dict) -> httpx.Response:
+    """Raw /api/generate: original stream, answer after a closed think block, probe, or resume."""
+    prompt = body["prompt"]
+    done = {**DONE, "response": ""}
+    del done["message"]
+    if body.get("stream") is False:
+        return httpx.Response(200, json={"response": "408}$.", "done": True, "prompt_eval_count": 50})
+    if prompt.endswith("</think>\n\n"):
+        answer = ndjson(generate_chunk(response="The answer is "), generate_chunk(response="408."), done)
+        return httpx.Response(200, content=answer)
+    if "<think>" in prompt:
+        return httpx.Response(200, content=ndjson(*(generate_chunk(response=t) for t in RESUMED), done))
+
+    async def stream():
+        for i, text in enumerate(THINKING):
+            if self.stop_after is not None and i == self.stop_after:
+                self.app.state.hub.request_stop("1")
+            yield ndjson(generate_chunk(thinking=text))
+        yield ndjson(generate_chunk(response="408"), done)
+
+    return httpx.Response(200, content=stream())
+
+
+FakeOllama.generate = _generate
 
 
 @pytest.fixture
@@ -339,9 +371,9 @@ def test_no_probes_before_the_minimum_thinking_length(client, fake):
 
 
 @pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
-def test_models_without_verified_prefill_are_only_observed(client, fake):
+def test_models_without_a_verified_template_are_only_observed(client, fake):
     fake.stop_after = 3
-    events = sse_events(chat(client, model="deepseek-r1:1.5b").text)
+    events = sse_events(chat(client, model="llama3.1:8b").text)
     deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
     assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING)
     assert "".join(d.get("content", "") for d in deltas) == "408"
@@ -350,3 +382,43 @@ def test_models_without_verified_prefill_are_only_observed(client, fake):
     assert (session.probes, session.probe_skipped, session.intervened) == (None, "template", False)
     assert fake.app.state.hub.summary(session)["can_intervene"] is False
     assert session.shadow is not None
+
+
+R1 = "deepseek-r1:1.5b"
+R1_PROMPT = "<｜User｜>" + QUESTION + "<｜Assistant｜>"  # noqa: RUF001 - DeepSeek's special tokens use fullwidth bars
+
+
+def test_raw_mode_answer_now_renders_the_prompt_and_closes_the_think_block(client, fake):
+    fake.stop_after = 3
+    events = sse_events(chat(client, model=R1).text)
+    deltas = [e["choices"][0]["delta"] for e in events[:-2]]
+    received = "".join(d.get("reasoning", "") for d in deltas)
+    assert received == "".join(THINKING[:4])
+    assert "".join(d.get("content", "") for d in deltas) == "The answer is 408."
+    original, answer = fake.bodies("/api/generate")
+    assert (original["prompt"], original["raw"], original["stream"]) == (R1_PROMPT, True, True)
+    expected = R1_PROMPT + "<think>\n" + received.rstrip() + "\n\nI have enough to answer now.\n</think>\n\n"
+    assert answer["prompt"] == expected
+    assert events[-2]["otg"]["intervened"] is True
+    assert fake.bodies("/api/chat") == []
+
+
+@pytest.mark.parametrize("app_kwargs", PROBE_EVERY_3)
+def test_raw_mode_probes_and_resumes_with_the_open_think_block(client, fake):
+    events = sse_events(
+        chat(
+            client,
+            model=R1,
+            messages=[{"role": "system", "content": "Be brief."}, {"role": "user", "content": QUESTION}],
+        ).text
+    )
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING[:3]) + "More checking. Still 408."
+    assert "".join(d.get("content", "") for d in deltas) == "408"
+    original, probe, resume = fake.bodies("/api/generate")
+    prompt = "Be brief." + R1_PROMPT
+    assert original["prompt"] == prompt
+    assert probe["stream"] is False and probe["prompt"].endswith("</think>\n\nThe final answer is $\\boxed{")
+    assert resume["prompt"] == prompt + "<think>\n" + "".join(THINKING[:3])
+    session = fake.app.state.hub.get("1")
+    assert [(p.at_tokens, p.answer) for p in session.probes.probes] == [(3, "408")]

@@ -14,7 +14,7 @@ from starlette.routing import Route
 
 from overthink_guard.analysis import Judge, JudgeConfig, ProbeTracker
 from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
-from overthink_guard.backends import OllamaBackend, to_native_chat
+from overthink_guard.backends import OllamaBackend, requests_for, to_native_chat
 from overthink_guard.control import SessionHub
 from overthink_guard.proxy.intervene import InterventionStream
 from overthink_guard.proxy.passthrough import forward
@@ -56,16 +56,17 @@ def create_app(
         if native is None:
             return await forward(request, client, backend_url, raw)
 
-        upstream = await backend.open_chat(native)
+        template = template_for_model(native["model"])
+        requests = requests_for(native, template)
+        upstream = await backend.open(requests.original())
         if upstream.status_code != 200:
             await upstream.aclose()
             return await forward(request, client, backend_url, raw)
 
-        template = template_for_model(native["model"])
         prompt = next(m["content"] for m in native["messages"] if m["role"] == "user")
         # Probing needs a prefill-capable template, and resuming reseeds sampling, which would break a client seed.
         skip = None
-        if probe and not template.prefill_supported:
+        if probe and not template.can_intervene:
             skip = "template"
         elif probe and "seed" in native.get("options", {}):
             skip = "seed"
@@ -77,7 +78,7 @@ def create_app(
             session=session,
             backend=backend,
             response=upstream,
-            native=native,
+            requests=requests,
             template=template,
             include_usage=bool((body.get("stream_options") or {}).get("include_usage")),
             probe_interval=probe_interval,
