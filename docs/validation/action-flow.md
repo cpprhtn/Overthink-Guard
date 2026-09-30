@@ -51,3 +51,31 @@
 - **시간과 양은 사용자가 끊는 시점을 예측하지 못했다.** 10분과 40회 기준선의 lift는 1 미만이다. 사용자는 오래 걸리는 턴을 끊지 않았다. 구독 V7의 결론("긴 턴은 대개 필요한 작업")과 같은 방향이다.
 - 사용자가 끊은 18턴 중 6턴은 프롬프트 뒤 22초 안, 도구 호출 0–2회 때였다. 헛돌아서가 아니라 마음을 바꾼 경우로 보인다. 흐름 신호가 중단보다 먼저 뜬 것은 3턴이다.
 - 정정 표현까지 합친 보조 라벨(38턴)에서도 `errors3`, `same_fail`의 lift는 2.1–2.2로 가장 높았다.
+
+## B 사전 등록: 헛돌 때 끊지 않고 방향을 틀어 주면 정답을 지키면서 낭비가 줄어드는가 (2026-09-30, 측정 전)
+
+- **방법:** 헤드리스 `claude -p --model sonnet`에 작은 코딩 과제를 준다. 채점은 에이전트가 볼 수 없는 숨은 테스트로 한다. 과제는 `bench/spikes/action_flow_tasks.py`, 실행은 `bench/spikes/action_flow_live.py`다.
+- **두 조건:**
+  - 대조: 훅이 기록만 한다.
+  - 넛지: A에서 고른 신호가 뜨면 훅이 `additionalContext`로 메모를 넣는다. 턴은 끊지 않는다(V7에서 끊으면 생각이 사라져 정답을 잃었다).
+  - 두 조건 모두 같은 훅이 돌아서 오버헤드는 같다.
+- **신호:** `errors3`(이 실행에서 도구 실패 3번째) 또는 `same_fail`(같은 도구·같은 입력이 2번째로 실패). `PostToolUseFailure` 훅에서 센다. 넛지는 실행당 최대 2번이다.
+- **넛지 문구 (고정):** "[Overthink Guard, a monitor the user runs on this session] {이유}. Retrying the same thing rarely helps. Before the next attempt, state in one or two sentences what the error tells you about the cause, then change approach. If it truly cannot be done in this environment, say so."
+  - {이유}는 `3 tool calls have failed in this task` 또는 `the same command has now failed twice`이다.
+- **과제 8개:**
+  - 대조군 성격의 쉬운 버그 1개
+  - 원인이 다른 파일에 있는 버그
+  - 없는 모듈을 쓰는 코드
+  - 반올림(half-up)
+  - 깊은 재귀
+  - 로그 파싱 정규식
+  - 영업일 계산
+  - pytest가 없는 환경에서 pytest 스타일 테스트
+- **반복과 제한:** 과제마다 조건별 3회, 총 48회. 동시 실행 3개, 한 실행 최대 10분(넘으면 실패로 센다).
+- **허용 도구:** Read, Edit, Write, Glob, Grep, Bash. `pip`, `brew`, `curl`, `sudo`는 금지한다(사용자 시스템 보호).
+- **B1 정답 보존 (합격 조건):**
+  - FP 과제 0개. FP 과제는 대조가 3회 중 2회 이상 통과했는데 넛지가 1회 이하로 통과한 과제다.
+  - 넛지 전체 통과 수 ≥ 대조 전체 통과 수 − 1.
+- **B2 낭비 감소 (합격 조건):** 신호가 뜬 실행만 보고, 신호 이후의 도구 실패 수와 신호 이후 걸린 시간의 평균이 넛지 쪽에서 대조의 80% 이하일 것. 대조에서도 신호 시점은 기록한다.
+- **판정 불가:** 조건별로 신호가 뜬 실행이 6회 미만이면 B2는 판정하지 않고 수치만 보고한다.
+- **함께 보고:** 실행당 도구 호출 수, 도구 실패 수, 걸린 시간, 출력 토큰, 신호 발동률, 모델이 넛지를 의심하거나 무시한 사례.
