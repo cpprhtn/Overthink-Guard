@@ -7,6 +7,7 @@ Usage: python bench/spikes/action_flow_live.py --out b.jsonl [--analyze]
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -22,25 +23,74 @@ from action_flow_tasks import TASKS
 HOOK = Path(__file__).with_name("action_flow_hook.py")
 LIMIT = 600
 ALLOWED = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+HARD: dict[str, dict] = {}  # filled from --hard <manifest.json> (SWE-bench-style tasks, docs/validation/action-flow.md)
+HARD_LIMIT = 900
 DENIED = ["Bash(pip:*)", "Bash(pip3:*)", "Bash(python3 -m pip:*)", "Bash(brew:*)", "Bash(curl:*)", "Bash(sudo:*)"]
 
 
+def load_hard(manifest: Path) -> None:
+    root = manifest.parent
+    for t in json.loads(manifest.read_text()):
+        HARD[t["task_id"]] = {**t, "root": root, "venv": root / "venv"}
+
+
+def hard_env(spec: dict, work: Path) -> dict:
+    env = {
+        **os.environ,
+        "PATH": f"{spec['venv'] / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "VIRTUAL_ENV": str(spec["venv"]),
+    }
+    if spec["pythonpath"]:
+        env["PYTHONPATH"] = str(work / spec["pythonpath"])
+    return env
+
+
+def grade_hard(spec: dict, work: Path, grade: Path) -> tuple[bool, bool]:
+    shutil.copytree(work, grade)
+    for rel in spec["hidden_files"]:
+        target = grade / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(spec["root"] / "tasks" / spec["task_id"] / "hidden" / rel, target)
+    results = []
+    for key in ("grade_command", "regression_command"):
+        command = spec[key].replace("{venv}", str(spec["venv"]))
+        try:
+            r = subprocess.run(
+                command, shell=True, cwd=grade, env=hard_env(spec, grade), capture_output=True, timeout=600
+            )
+            results.append(r.returncode == 0)
+        except subprocess.TimeoutExpired:
+            results.append(False)
+    return results[0], results[1]
+
+
 def run(task: str, arm: str, rep: int) -> dict:
-    spec = TASKS[task]
+    hard = task in HARD
+    spec = HARD[task] if hard else TASKS[task]
     with tempfile.TemporaryDirectory() as tmp:
         work, state = Path(tmp) / "work", Path(tmp) / "state"
-        work.mkdir()
         state.mkdir()
-        for name, content in spec["files"].items():
-            (work / name).write_text(content)
+        if hard:
+            shutil.copytree(spec["root"] / "tasks" / task / "workspace", work)
+        else:
+            work.mkdir()
+            for name, content in spec["files"].items():
+                (work / name).write_text(content)
         command = f"{sys.executable} {HOOK} {'nudge' if arm == 'nudge' else 'log'} {state}"
         hooks = [{"matcher": "*", "hooks": [{"type": "command", "command": command, "timeout": 30}]}]
         settings = json.dumps({"hooks": {"PostToolUse": hooks, "PostToolUseFailure": hooks}})
         cmd = ["claude", "-p", spec["prompt"], "--model", "sonnet", "--output-format", "stream-json", "--verbose",
                "--settings", settings, "--allowedTools", *ALLOWED, "--disallowedTools", *DENIED]  # fmt: skip
         start = time.time()
-        proc = subprocess.Popen(cmd, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True)
-        timer = threading.Timer(LIMIT, lambda: proc.poll() is None and proc.kill())
+        proc = subprocess.Popen(
+            cmd,
+            cwd=work,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            text=True,
+            env=hard_env(spec, work) if hard else None,
+        )
+        timer = threading.Timer(HARD_LIMIT if hard else LIMIT, lambda: proc.poll() is None and proc.kill())
         timer.start()
         events = [json.loads(line) for line in proc.stdout if line.startswith("{")]
         proc.wait()
@@ -64,23 +114,25 @@ def run(task: str, arm: str, rep: int) -> dict:
         states = [json.loads(p.read_text()) for p in state.glob("*.json")]
         fires = sorted((f for s in states for f in s["fires"]), key=lambda f: f["time"])
         grade = Path(tmp) / "grade"
-        shutil.copytree(work, grade)
-        (grade / "hidden_test.py").write_text(spec["hidden"])
-        try:
-            passed = (
-                subprocess.run(
-                    [sys.executable, "hidden_test.py"], cwd=grade, capture_output=True, timeout=120
-                ).returncode
-                == 0
-            )
-        except subprocess.TimeoutExpired:
-            passed = False
+        regression = None
+        if hard:
+            target_ok, regression = grade_hard(spec, work, grade)
+            passed = target_ok and regression
+        else:
+            shutil.copytree(work, grade)
+            (grade / "hidden_test.py").write_text(spec["hidden"])
+            try:
+                check = [sys.executable, "hidden_test.py"]
+                passed = subprocess.run(check, cwd=grade, capture_output=True, timeout=120).returncode == 0
+            except subprocess.TimeoutExpired:
+                passed = False
         first = fires[0] if fires else None
         return {
             "task": task,
             "arm": arm,
             "rep": rep,
             "passed": passed,
+            "regression_ok": regression,
             "seconds": round(end - start, 1),
             "end": result.get("terminal_reason") or result.get("subtype") or "killed",
             "tools": tools,
@@ -99,7 +151,7 @@ def analyze(records: list[dict]) -> None:
     arms = ("control", "nudge")
     print(f"{'task':15} " + " ".join(f"{a:>8}" for a in arms))
     fp_tasks, totals = [], dict.fromkeys(arms, 0)
-    for task in TASKS:
+    for task in dict.fromkeys(r["task"] for r in records):
         passed = {a: sum(r["passed"] for r in records if r["task"] == task and r["arm"] == a) for a in arms}
         runs = {a: sum(1 for r in records if r["task"] == task and r["arm"] == a) for a in arms}
         for a in arms:
@@ -135,7 +187,12 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--tasks", nargs="*", default=list(TASKS))
     parser.add_argument("--analyze", action="store_true")
+    parser.add_argument("--hard", type=Path, help="manifest.json of SWE-bench-style tasks to run instead")
     args = parser.parse_args()
+    if args.hard:
+        load_hard(args.hard)
+        if args.tasks == list(TASKS):
+            args.tasks = list(HARD)
     records = [json.loads(line) for line in args.out.read_text().splitlines()] if args.out.exists() else []
     if not args.analyze:
         done = {(r["task"], r["arm"], r["rep"]) for r in records}
