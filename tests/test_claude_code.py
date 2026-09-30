@@ -307,13 +307,19 @@ def test_observer_and_report_only_read_and_never_open_key_files_or_sockets(tmp_p
     def no_network(*args, **kwargs):
         raise AssertionError("network access")
 
-    for module, name, spy in [(io, "open", spy_open), (builtins, "open", spy_open), (os, "open", spy_os_open),
-                              (socket, "socket", no_network), (socket, "create_connection", no_network)]:
+    for module, name, spy in [
+        (io, "open", spy_open),
+        (builtins, "open", spy_open),
+        (os, "open", spy_os_open),
+        (socket, "socket", no_network),
+        (socket, "create_connection", no_network),
+    ]:
         monkeypatch.setattr(module, name, spy)
     clock, alerts = Clock(), []
     clock.now = T0 + 6
-    observer = ClaudeCodeObserver(projects, 60, alerts.append, clock=clock, sessions_dir=sessions,
-                                  pid_alive=lambda pid: True)
+    observer = ClaudeCodeObserver(
+        projects, 60, alerts.append, clock=clock, sessions_dir=sessions, pid_alive=lambda pid: True
+    )
     observer.poll()
     with real_open(log, "a") as fh:
         fh.write(json.dumps(user(10)) + "\n")
