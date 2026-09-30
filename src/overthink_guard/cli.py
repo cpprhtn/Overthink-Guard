@@ -190,11 +190,12 @@ def _claude_watch(args: argparse.Namespace) -> int:
         seconds = event["stats"]["thinking_elapsed_s"]
         message = f"Claude has been working for {seconds}s with no output yet ({event['source']['project']})"
         print(
-            f"[{time.strftime('%H:%M:%S')}] {message}. Press Esc in Claude Code to stop it if it is going in circles.",
+            f"[{time.strftime('%H:%M:%S')}] {message}. Long turns are usually productive; "
+            "stopping one early often costs the right answer (docs/validation/subscription.md, V7).",
             flush=True,
         )
         if args.desktop:
-            notify("Overthink Guard", message + ". Esc stops it.")
+            notify("Overthink Guard", message + ".")
         if args.hook:
             run_hook(args.hook, event)
 

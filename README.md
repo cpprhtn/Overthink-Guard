@@ -68,14 +68,14 @@ These results come from two small models (qwen3:1.7b, deepseek-r1:1.5b), mostly 
 Claude Code does not show its thinking while it happens. Headless stream-json carries empty thinking deltas, and the session log gets each thinking block only after it ends. So Overthink Guard cannot judge Claude's reasoning live. What it can see is how long a turn has gone without any output, and how much of your usage went to thinking.
 
 ```bash
-otg claude-code watch            # desktop alert when a turn has been silent for 60s; press Esc to stop it
+otg claude-code watch            # desktop alert when a turn has gone 60s without output
 otg claude-code watch --after 90 --hook "your-command"   # also pass a stop_suggested event (JSON on stdin)
 otg claude-code report --days 7  # thinking tokens per effort level, share of output spent on thinking
 ```
 
 - It reads `~/.claude/projects/*/*.jsonl` (only record types, timestamps, effort and token counts; message text is neither kept nor sent) and the session status files in `~/.claude/sessions/*.json`. It never opens credential or key files, never proxies requests, and never interrupts a session.
 - Alerts are advice based on time alone. On the author's machine, 0.8% of turns were silent for over 60 s. In a pre-registered check ([`docs/validation/subscription.md`](docs/validation/subscription.md)), replaying 66 real sessions gave 96.5% precision and 100% recall at 60 s. That measures whether Claude was really still working when alerted, not whether stopping it then would have been right. In live headless runs, every turn that went past the threshold was alerted within 1 s of it (one ran for 593 s and 64k thinking tokens), and short, aborted and interrupted runs got no alert.
-- To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). Both turns interrupted in testing ended with a wrong answer, because the interrupted thinking is lost. That is why stopping is not built in.
+- To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). Don't, at 60 s: in a pre-registered test (V7), Sonnet turns that went past 60 s were right 8 of 9 times when left alone and 4 of 9 times when stopped at the alert, because the interrupted thinking is lost. On these problems long turns were needed thinking, not overthinking. That is why stopping is not built in, and why the alert only tells you a turn is taking long.
 - `report` counts only turns that finished: tokens spent before an interrupt are not in the logs.
 - Claude Code's local file formats are internal and may change between releases. Tested with Claude Code 2.1.233.
 
