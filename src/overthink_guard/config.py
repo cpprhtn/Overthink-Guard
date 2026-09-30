@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from overthink_guard.analysis import JudgeConfig
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
+from overthink_guard.analysis.prober import DEFAULT_OPEN_BUDGET_TOKENS, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.storage import default_stats_path
 
 
@@ -31,6 +31,7 @@ class Settings:
     probe_interval: int = 400
     probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS
     probe_converge_k: int = DEFAULT_PROBE_K
+    open_budget_tokens: int = DEFAULT_OPEN_BUDGET_TOKENS
     stats_file: Path | None = field(default_factory=default_stats_path)
 
 
@@ -50,6 +51,7 @@ _SCHEMA: dict = {
             "probe_interval_tokens": int,
             "probe_min_tokens": int,
             "probe_converge_k": int,
+            "open_budget_tokens": int,
         },
     },
     "privacy": {"stats_file": (str, type(None))},
@@ -99,6 +101,7 @@ def load_settings(path: Path | None) -> Settings:
     settings.probe_interval = signals.get("probe_interval_tokens", settings.probe_interval)
     settings.probe_min_tokens = signals.get("probe_min_tokens", settings.probe_min_tokens)
     settings.probe_converge_k = signals.get("probe_converge_k", settings.probe_converge_k)
+    settings.open_budget_tokens = signals.get("open_budget_tokens", settings.open_budget_tokens)
     privacy = data.get("privacy", {})
     if "stats_file" in privacy:
         value = privacy["stats_file"]

@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from overthink_guard.analysis import Probe, read_probe_answer
+from overthink_guard.analysis import Probe, grounded, read_probe_answer
 from overthink_guard.backends import ChatPrefill, OllamaBackend, RawPrompt, chunk_text, iter_chunks
 from overthink_guard.control.session import ANSWERING, CANCELLED, DONE, ERROR, THINKING, Session, SessionHub
 from overthink_guard.stream import ThinkStreamParser
@@ -131,10 +131,15 @@ class InterventionStream:
             result = await self._backend.complete(self._requests.probe(session.thinking))
             self._estimate_prompt(result)
             answer = read_probe_answer(chunk_text(result)[1])
+            is_grounded = False
+            if answer is not None:
+                plain = await self._backend.complete(self._requests.probe(session.thinking, plain=True))
+                is_grounded = grounded(answer, chunk_text(plain)[1])
         except (httpx.HTTPError, KeyError, ValueError):
-            answer = None
+            answer, is_grounded = None, False
         self._last_probe_at = session.judge.thinking_tokens
-        self._hub.add_probe(session, Probe(self._last_probe_at, answer, time.monotonic() - started))
+        probe = Probe(self._last_probe_at, answer, time.monotonic() - started, is_grounded)
+        self._hub.add_probe(session, probe)
         if self._auto and session.probes is not None and session.probes.decision is not None:
             session.auto_stopped = True
             session.stop_requested.set()
@@ -184,6 +189,7 @@ class InterventionStream:
                 otg |= {
                     "intervened": True,
                     "auto": session.auto_stopped,
+                    "auto_reason": session.probes.reason if session.auto_stopped and session.probes else None,
                     "stopped_after_tokens": stopped_after,
                     "answer_prompt_tokens": answer.get("prompt_eval_count"),
                     "answer_prompt_cached_tokens": answer.get("prompt_eval_cached_count"),

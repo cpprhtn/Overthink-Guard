@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from overthink_guard.analysis import Probe, ProbeTracker, read_probe_answer
+from overthink_guard.analysis import Probe, ProbeTracker, grounded, read_probe_answer
 from overthink_guard.storage import ShadowStats
 
 
@@ -68,3 +68,37 @@ def test_memory_only_stats_write_nothing(tmp_path):
     stats.add(record(100, None, None))
     assert stats.summary()["requests"] == 1
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("boxed", "plain", "expected"),
+    [
+        ("45", "45\n\n**Final Answer**", True),
+        ("3", " \\boxed{3}\n\nWait", True),
+        ("15^\\circ", "15 degrees.", True),
+        ("cassandra", "Cassandra, because writes scale out.", True),
+        ("1", "1. Use ELK for centralized logging", False),
+        ("10000", "1. Short code generator using a hash", False),
+        ("1", "7.4\n\nWait, no", False),
+        (None, "anything", False),
+    ],
+)
+def test_grounded_needs_the_one_line_answer_to_state_the_boxed_one(boxed, plain, expected):
+    assert grounded(boxed, plain) is expected
+
+
+def test_tracker_converges_on_grounded_answers_only():
+    tracker = ProbeTracker(converge_k=2, open_budget=10_000)
+    assert not tracker.add(Probe(400, "1", 0.1, grounded=False))
+    assert not tracker.add(Probe(800, "1", 0.1, grounded=False))
+    assert not tracker.add(Probe(1200, "45", 0.1))
+    assert tracker.add(Probe(1600, "45", 0.1))
+    assert (tracker.decision.at_tokens, tracker.reason) == (1600, "converged")
+
+
+def test_tracker_stops_open_ended_thinking_at_the_budget():
+    tracker = ProbeTracker(converge_k=4, open_budget=2000)
+    fired = [tracker.add(Probe(t, "1", 0.1, grounded=False)) for t in (400, 800, 1200, 1600, 2000)]
+    assert fired == [False, False, False, False, True]
+    assert tracker.reason == "budget"
+    assert tracker.looks_open

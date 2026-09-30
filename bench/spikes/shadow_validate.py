@@ -37,7 +37,7 @@ def session_state(proxy: str, session: str) -> tuple[dict, list, list]:
                     continue
                 event = json.loads(line[6:])
                 if event.get("session") == session and event["type"] == "probe":
-                    probes.append([event["at_tokens"], event["answer"]])
+                    probes.append([event["at_tokens"], event["answer"], event.get("grounded", True)])
                 elif event.get("session") == session and event["type"] == "segment":
                     segments.append([event["start_tokens"], event["end_tokens"], event["text"]])
                 elif event["type"] == "session" and event["id"] == session:

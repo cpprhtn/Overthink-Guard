@@ -13,7 +13,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Route
 
 from overthink_guard.analysis import Judge, JudgeConfig, ProbeTracker
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
+from overthink_guard.analysis.prober import DEFAULT_OPEN_BUDGET_TOKENS, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.backends import OllamaBackend, requests_for, to_native_chat
 from overthink_guard.control import SessionHub
 from overthink_guard.proxy.intervene import InterventionStream
@@ -39,6 +39,7 @@ def create_app(
     probe_interval: int = 400,
     probe_min_tokens: int = DEFAULT_PROBE_MIN_TOKENS,
     probe_converge_k: int = DEFAULT_PROBE_K,
+    open_budget_tokens: int = DEFAULT_OPEN_BUDGET_TOKENS,
 ) -> Starlette:
     client = client or httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0))
     backend = OllamaBackend(client, backend_url)
@@ -73,7 +74,7 @@ def create_app(
             skip = "template"
         elif probe and "seed" in native.get("options", {}):
             skip = "seed"
-        tracker = ProbeTracker(probe_converge_k) if probe and skip is None else None
+        tracker = ProbeTracker(probe_converge_k, open_budget_tokens) if probe and skip is None else None
         session = hub.create(native["model"], prompt, Judge(template, judge_config or JudgeConfig()), tracker)
         session.probe_skipped = skip
         stream = InterventionStream(

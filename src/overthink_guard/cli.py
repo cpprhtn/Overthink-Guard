@@ -8,7 +8,7 @@ from pathlib import Path
 
 from overthink_guard import __version__
 from overthink_guard.analysis import JudgeConfig, ReplayReport, replay
-from overthink_guard.analysis.prober import DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
+from overthink_guard.analysis.prober import DEFAULT_OPEN_BUDGET_TOKENS, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS
 from overthink_guard.config import MODES, ConfigError, Settings, default_config_path, load_settings
 from overthink_guard.templates import get_template, template_ids
 
@@ -120,6 +120,7 @@ def resolve_settings(args: argparse.Namespace) -> Settings:
         ("probe_interval", "probe_interval"),
         ("probe_min_tokens", "probe_min_tokens"),
         ("probe_k", "probe_converge_k"),
+        ("open_budget_tokens", "open_budget_tokens"),
         ("stats_file", "stats_file"),
     ]:
         if getattr(args, flag) is not None:
@@ -173,6 +174,7 @@ def _start(args: argparse.Namespace) -> int:
         probe_interval=s.probe_interval,
         probe_min_tokens=s.probe_min_tokens,
         probe_converge_k=s.probe_converge_k,
+        open_budget_tokens=s.open_budget_tokens,
     )
     uvicorn.run(app, host=s.host, port=s.port, log_level="warning")
     return 0
@@ -220,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--probe-k",
         type=int,
         help=f"identical probe answers in a row to count as converged (default {DEFAULT_PROBE_K})",
+    )
+    start.add_argument(
+        "--open-budget-tokens",
+        type=int,
+        help=f"thinking budget for open-ended prompts with no short answer (default {DEFAULT_OPEN_BUDGET_TOKENS})",
     )
     start.add_argument("--stats-file", type=Path, help="where Shadow statistics are appended (JSONL)")
     start.add_argument("--no-stats", action="store_true", help="keep Shadow statistics in memory only")

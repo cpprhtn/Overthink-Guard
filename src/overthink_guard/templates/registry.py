@@ -29,6 +29,8 @@ class Template:
     stop_injection_text: str
     probe_answer_prefix: str
     probe_max_tokens: int
+    probe_plain_prefix: str
+    probe_plain_max_tokens: int
     resume_content_prefix: str
     extract_boxed: bool
     max_answer_chars: int
@@ -57,6 +59,8 @@ def _build(raw: dict) -> Template:
         stop_injection_text=raw["stop_injection"]["text"],
         probe_answer_prefix=raw["probe"]["answer_prefix"],
         probe_max_tokens=int(raw["probe"]["max_tokens"]),
+        probe_plain_prefix=raw["probe"]["plain_prefix"],
+        probe_plain_max_tokens=int(raw["probe"]["plain_max_tokens"]),
         resume_content_prefix=raw["resume"]["content_prefix"],
         extract_boxed=bool(raw.get("extract_boxed", False)),
         max_answer_chars=int(raw.get("max_answer_chars", 40)),

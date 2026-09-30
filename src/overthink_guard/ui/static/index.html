@@ -95,7 +95,7 @@ function renderDetail() {
     el("div", { class: "row" },
       el("span", { class: "badge " + s.status }, s.status),
       el("span", {}, `~${s.thinking_tokens} thinking tokens`),
-      s.intervened ? el("span", { class: "badge", title: s.auto_stopped ? "Runaway guard: probe answers agreed after a long stretch of thinking" : "" }, s.auto_stopped ? "auto-stopped" : "stopped early") : "",
+      s.intervened ? el("span", { class: "badge", title: s.auto_stopped ? STOP_REASON[s.probe_converged?.reason] ?? "" : "" }, s.auto_stopped ? "auto-stopped" : "stopped early") : "",
       s.probe_skipped ? el("span", { class: "badge", title: PROBE_SKIP[s.probe_skipped] }, `no probes: ${s.probe_skipped}`) : "",
       stopBtn),
   ];
@@ -118,8 +118,10 @@ function renderDetail() {
   }
   if (s.probes.length) {
     const trail = el("div", { class: "answers" }, "Probe answers: ");
-    s.probes.forEach((p, i) => trail.append(i ? " → " : "", el("b", {}, p.answer ?? "?"), ` @${p.at_tokens}`));
-    if (s.probe_converged) trail.append(` (converged @${s.probe_converged.at_tokens})`);
+    s.probes.forEach((p, i) => trail.append(i ? " → " : "",
+      p.grounded ? el("b", {}, p.answer ?? "?") : el("span", { title: "No short answer: the one-line answer did not state it" }, `(${p.answer ?? "?"})`),
+      ` @${p.at_tokens}`));
+    if (s.probe_converged) trail.append(` (${s.probe_converged.reason} @${s.probe_converged.at_tokens})`);
     parts.push(trail);
   }
   if (s.shadow) parts.push(el("div", { class: "shadow" }, shadowText(s.shadow)));
@@ -132,6 +134,10 @@ function renderDetail() {
 function render() { renderList(); renderDetail(); }
 
 const MATCH = { true: "same answer", false: "DIFFERENT answer", null: "answer unknown" };
+const STOP_REASON = {
+  converged: "Runaway guard: the same short answer came back from 4 probes after a long stretch of thinking",
+  budget: "Thinking budget: this prompt has no short answer and the thinking ran past the open-ended budget",
+};
 const PROBE_SKIP = {
   seed: "Resuming after a probe would break a client-fixed seed",
   template: "Probing is not verified for this model's chat template",

@@ -46,6 +46,7 @@ class FakeOllama:
         self.native_status = 200
         self.probe_status = 200
         self.resume_status = 200
+        self.open_ended = False
 
     def bodies(self, path: str) -> list[dict]:
         return [json.loads(r.content) for r in self.requests if r.url.path == path]
@@ -64,7 +65,9 @@ class FakeOllama:
             return httpx.Response(self.native_status, stream=httpx.ByteStream(b'{"error": "think not supported"}'))
         body = json.loads(request.content)
         if body.get("stream") is False:
-            probe = {"message": {"role": "assistant", "content": "408}$."}, "done": True, "prompt_eval_count": 50}
+            plain = body["messages"][-1]["content"] == "Final answer (one line): "
+            text = "Use a message queue." if plain and self.open_ended else "408}$."
+            probe = {"message": {"role": "assistant", "content": text}, "done": True, "prompt_eval_count": 50}
             return httpx.Response(self.probe_status, json=probe if self.probe_status == 200 else {"error": "x"})
         if not body.get("think") and body["messages"][-1]["role"] == "assistant":
             if self.resume_status != 200:
@@ -294,9 +297,10 @@ def test_probing_pauses_probes_and_resumes_transparently(client, fake):
     assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING[:3]) + "More checking. Still 408."
     assert "".join(d.get("content", "") for d in deltas) == "408"
 
-    _, probe, resume = fake.bodies("/api/chat")
+    _, probe, plain, resume = fake.bodies("/api/chat")
     assert probe["stream"] is False and probe["think"] is True
     assert probe["messages"][-1]["content"].endswith("\\boxed{")
+    assert plain["messages"][-1]["content"] == "Final answer (one line): "
     assert probe["options"] == {"num_predict": 16, "temperature": 0}
     assert resume["messages"][-1] == {"role": "assistant", "content": "<think>\n" + "".join(THINKING[:3])}
     assert "think" not in resume
@@ -415,7 +419,8 @@ def test_raw_mode_probes_and_resumes_with_the_open_think_block(client, fake):
     deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
     assert "".join(d.get("reasoning", "") for d in deltas) == "".join(THINKING[:3]) + "More checking. Still 408."
     assert "".join(d.get("content", "") for d in deltas) == "408"
-    original, probe, resume = fake.bodies("/api/generate")
+    original, probe, plain, resume = fake.bodies("/api/generate")
+    assert plain["prompt"].endswith("</think>\n\nFinal answer (one line): ")
     prompt = "Be brief." + R1_PROMPT
     assert original["prompt"] == prompt
     assert probe["stream"] is False and probe["prompt"].endswith("</think>\n\nThe final answer is $\\boxed{")
@@ -448,3 +453,18 @@ def test_auto_mode_leaves_unverified_models_alone(client, fake):
     assert "".join(d.get("content", "") for d in deltas) == "408"
     session = fake.app.state.hub.get("1")
     assert (session.auto_stopped, session.probe_skipped) == (False, "template")
+
+
+@pytest.mark.parametrize(
+    "app_kwargs",
+    [{"auto": True, "probe_interval": 1, "probe_min_tokens": 0, "probe_converge_k": 4, "open_budget_tokens": 3}],
+)
+def test_auto_mode_uses_the_thinking_budget_when_probes_have_no_short_answer(client, fake):
+    fake.open_ended = True
+    events = sse_events(chat(client).text)
+    deltas = [e["choices"][0]["delta"] for e in events if isinstance(e, dict) and e["choices"]]
+    assert "".join(d.get("content", "") for d in deltas) == "The answer is 408."
+    otg = events[-2]["otg"]
+    assert (otg["auto"], otg["auto_reason"], otg["probes"]) == (True, "budget", 4)
+    session = fake.app.state.hub.get("1")
+    assert [p.grounded for p in session.probes.probes] == [False] * 4

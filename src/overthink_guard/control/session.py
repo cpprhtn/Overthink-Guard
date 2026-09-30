@@ -49,7 +49,12 @@ def _segment_event(session: Session, segment: Segment) -> dict:
 
 
 def _probe_dict(probe: Probe) -> dict:
-    return {"at_tokens": probe.at_tokens, "answer": probe.answer, "seconds": round(probe.seconds, 3)}
+    return {
+        "at_tokens": probe.at_tokens,
+        "answer": probe.answer,
+        "grounded": probe.grounded,
+        "seconds": round(probe.seconds, 3),
+    }
 
 
 class SessionHub:
@@ -115,6 +120,7 @@ class SessionHub:
         if session.probes is not None:
             record["tier2"] = {
                 **outcome(session.probes.decision),
+                "reason": session.probes.reason,
                 "probes": len(session.probes.probes),
                 "probe_seconds": round(session.probes.seconds, 3),
             }
@@ -171,7 +177,7 @@ class SessionHub:
             "probe_skipped": session.probe_skipped,
             "probe_converged": None
             if session.probes is None or session.probes.decision is None
-            else _probe_dict(session.probes.decision),
+            else {**_probe_dict(session.probes.decision), "reason": session.probes.reason},
             "shadow": session.shadow,
         }
 

@@ -65,11 +65,18 @@ def answer_prefill(native: dict, thinking: str, template: Template, generated_to
     return body
 
 
-def probe_request(native: dict, thinking: str, template: Template) -> dict:
-    """Short greedy completion of an open \\boxed{ after the thinking so far (Tier 2 probe)."""
+def _probe_prefix(template: Template, plain: bool) -> tuple[str, int]:
+    if plain:
+        return template.probe_plain_prefix, template.probe_plain_max_tokens
+    return template.probe_answer_prefix, template.probe_max_tokens
+
+
+def probe_request(native: dict, thinking: str, template: Template, plain: bool = False) -> dict:
+    """Short greedy answer after the thinking so far: an open \\boxed{, or a one-line answer when plain (Tier 2)."""
+    prefix, max_tokens = _probe_prefix(template, plain)
     prefill = {
         "role": "assistant",
-        "content": template.probe_answer_prefix,
+        "content": prefix,
         "thinking": template.stop_thinking_prefix + thinking.rstrip() + template.stop_injection_text,
     }
     return {
@@ -77,7 +84,7 @@ def probe_request(native: dict, thinking: str, template: Template) -> dict:
         "messages": [*native["messages"], prefill],
         "think": True,
         "stream": False,
-        "options": {"num_predict": template.probe_max_tokens, "temperature": 0},
+        "options": {"num_predict": max_tokens, "temperature": 0},
     }
 
 
@@ -117,8 +124,8 @@ class ChatPrefill:
     def answer(self, thinking: str, generated_tokens: int) -> Call:
         return Call("/api/chat", answer_prefill(self._native, thinking, self._template, generated_tokens))
 
-    def probe(self, thinking: str) -> Call:
-        return Call("/api/chat", probe_request(self._native, thinking, self._template))
+    def probe(self, thinking: str, plain: bool = False) -> Call:
+        return Call("/api/chat", probe_request(self._native, thinking, self._template, plain))
 
     def resume(self, thinking: str, generated_tokens: int) -> Call:
         return Call("/api/chat", resume_request(self._native, thinking, self._template, generated_tokens))
@@ -156,9 +163,10 @@ class RawPrompt:
     def answer(self, thinking: str, generated_tokens: int) -> Call:
         return Call("/api/generate", _with_budget(self._native, self._body(self._closed(thinking)), generated_tokens))
 
-    def probe(self, thinking: str) -> Call:
-        body = self._body(self._closed(thinking) + self._template.probe_answer_prefix, stream=False)
-        body["options"] = {"num_predict": self._template.probe_max_tokens, "temperature": 0}
+    def probe(self, thinking: str, plain: bool = False) -> Call:
+        prefix, max_tokens = _probe_prefix(self._template, plain)
+        body = self._body(self._closed(thinking) + prefix, stream=False)
+        body["options"] = {"num_predict": max_tokens, "temperature": 0}
         return Call("/api/generate", body)
 
     def resume(self, thinking: str, generated_tokens: int) -> Call:

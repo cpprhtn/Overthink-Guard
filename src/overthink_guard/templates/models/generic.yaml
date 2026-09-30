@@ -12,10 +12,14 @@ prefill_supported: false
 stop_injection:
   thinking_prefix: "\n"
   text: "\n\nI have enough to answer now."
-# Tier 2 (opt-in): the probe prefills the answer up to an open \boxed{ and reads a few tokens.
+# Tier 2 (opt-in): the probe prefills the answer up to an open \boxed{ and reads a few tokens. A second, plain probe
+# asks for a one-line answer; open-ended questions give a sentence there and a meaningless constant in the box, so a
+# boxed answer only counts when the plain one agrees (docs/spikes/shadow-live-probe.md, design prompts).
 probe:
   answer_prefix: "The final answer is $\\boxed{"
   max_tokens: 16
+  plain_prefix: "Final answer (one line): "
+  plain_max_tokens: 24
 # Resuming thinking after a probe: the chat thinking field always closes the block, so the open tag
 # goes in content instead and the model's continuation (thinking, end tag, answer) arrives as content.
 resume:
