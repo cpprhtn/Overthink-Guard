@@ -71,6 +71,7 @@ def log(tmp_path):
         (user(0, "<bash-input>ls</bash-input>"), False),
         (user(0, isMeta=True), False),
         (user(0, isSidechain=True), False),
+        (user(0, "This session is being continued from a previous conversation.", isCompactSummary=True), False),
         (assistant(0), False),
     ],
 )
@@ -227,3 +228,100 @@ def test_session_states_reads_only_json_metadata(tmp_path):
     write_state(tmp_path, 1, "busy")
     (tmp_path / "2.json").write_text("{broken")
     assert session_states(tmp_path, pid_alive=lambda pid: True) == {"s1": {"status": "busy", "alive": True}}
+
+
+def tool_use(seconds, *ids, msg_id="m1"):
+    blocks = [{"type": "tool_use", "id": i, "name": "Bash", "input": {}} for i in ids]
+    return {
+        "type": "assistant",
+        "timestamp": ts(seconds),
+        "sessionId": "s1",
+        "message": {"id": msg_id, "content": blocks},
+    }
+
+
+def result_for(seconds, tool_id):
+    return user(seconds, [{"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}])
+
+
+def run_observer(root, append, records, end):
+    clock, got = Clock(), []
+    observer = ClaudeCodeObserver(root, 60, got.append, clock=clock)
+    observer.poll()
+    for r in records:
+        append(r)
+    clock.now = T0 + end
+    observer.poll()
+    return got
+
+
+def test_parallel_tools_wait_for_the_last_result(log):
+    root, append = log
+    records = [user(0), tool_use(1, "a", "b"), result_for(2, "a")]
+    assert run_observer(root, append, records, end=100) == []
+
+
+def test_waiting_starts_when_the_last_parallel_result_arrives(log):
+    root, append = log
+    records = [user(0), tool_use(1, "a", "b"), result_for(2, "a"), result_for(50, "b")]
+    got = run_observer(root, append, records, end=111)
+    assert [e["stats"]["thinking_elapsed_s"] for e in got] == [61]
+
+
+@pytest.mark.parametrize(
+    "stopper",
+    [
+        user(10, [{"type": "text", "text": "[Request interrupted by user]"}]),
+        {"type": "system", "subtype": "api_error", "timestamp": ts(10), "sessionId": "s1"},
+    ],
+)
+def test_interruptions_and_api_errors_end_the_wait(log, stopper):
+    root, append = log
+    assert run_observer(root, append, [user(0), stopper], end=100) == []
+
+
+def test_observer_and_report_only_read_and_never_open_key_files_or_sockets(tmp_path, monkeypatch):
+    import builtins
+    import io
+    import os
+    import socket
+
+    projects, sessions = tmp_path / "projects", tmp_path / "sessions"
+    (projects / "-p").mkdir(parents=True)
+    sessions.mkdir()
+    log = projects / "-p" / "s1.jsonl"
+    log.write_text("".join(json.dumps(r) + "\n" for r in [user(0), assistant(5)]))
+    (sessions / "123.json").write_text(json.dumps({"pid": 123, "sessionId": "s1", "status": "busy"}))
+    (sessions / "123.key").write_text("secret")
+    opened = []
+    real_open, real_os_open = io.open, os.open
+
+    def spy_open(file, mode="r", *args, **kwargs):
+        opened.append((str(file), mode))
+        return real_open(file, mode, *args, **kwargs)
+
+    def spy_os_open(path, flags, *args, **kwargs):
+        opened.append((str(path), "w" if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND) else "r"))
+        return real_os_open(path, flags, *args, **kwargs)
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("network access")
+
+    for module, name, spy in [(io, "open", spy_open), (builtins, "open", spy_open), (os, "open", spy_os_open),
+                              (socket, "socket", no_network), (socket, "create_connection", no_network)]:
+        monkeypatch.setattr(module, name, spy)
+    clock, alerts = Clock(), []
+    clock.now = T0 + 6
+    observer = ClaudeCodeObserver(projects, 60, alerts.append, clock=clock, sessions_dir=sessions,
+                                  pid_alive=lambda pid: True)
+    observer.poll()
+    with real_open(log, "a") as fh:
+        fh.write(json.dumps(user(10)) + "\n")
+    clock.now = T0 + 100
+    observer.poll()
+    observer.poll()
+    usage_report(projects, now=T0 + 100)
+
+    assert len(alerts) == 1
+    assert opened and not [path for path, _ in opened if path.endswith(".key")]
+    assert all(set(mode) <= set("rbt") for _, mode in opened)

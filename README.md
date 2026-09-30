@@ -74,8 +74,9 @@ otg claude-code report --days 7  # thinking tokens per effort level, share of ou
 ```
 
 - It reads `~/.claude/projects/*/*.jsonl` (only record types, timestamps, effort and token counts; message text is neither kept nor sent) and the session status files in `~/.claude/sessions/*.json`. It never opens credential or key files, never proxies requests, and never interrupts a session.
-- Alerts are advice based on time alone. On the author's machine, 0.8% of turns were silent for over 60 s.
-- To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). In testing, stopping that early once produced a wrong answer, which is why this is not built in.
+- Alerts are advice based on time alone. On the author's machine, 0.8% of turns were silent for over 60 s. In a pre-registered check ([`docs/validation/subscription.md`](docs/validation/subscription.md)), replaying 66 real sessions gave 96.5% precision and 100% recall at 60 s. In live headless runs, every turn that went past the threshold was alerted within 1 s of it (one ran for 593 s and 64k thinking tokens), and short, aborted and interrupted runs got no alert.
+- To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). Both turns interrupted in testing ended with a wrong answer, because the interrupted thinking is lost. That is why stopping is not built in.
+- `report` counts only turns that finished: tokens spent before an interrupt are not in the logs.
 - Claude Code's local file formats are internal and may change between releases. Tested with Claude Code 2.1.233.
 
 ## Configuration

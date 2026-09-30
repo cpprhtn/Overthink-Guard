@@ -37,4 +37,6 @@ With a deliberately aggressive `--after 5` and a number-theory question:
 | Follow-up (once) | An answer 13 s after the start |
 | Correctness | **Wrong**: it missed one of the four solutions (x = 32257), which a full-length run had found |
 
+A larger check (`docs/validation/subscription.md`, V6) stopped 12 problems at a fixed 20 s. Sonnet had already finished 11 of them by then. The one it did interrupt went from the right answer (201) to a wrong one (191), even though it used 894 output tokens instead of 4,271. Both interruptions so far turned a right answer wrong. The interrupted thinking is not saved to the session, so the follow-up answers from scratch rather than from the reasoning so far.
+
 Stopping early saves time, but it can cost accuracy. Claude Code does not expose the thinking while it happens (see `docs/spikes/s4-claude-code.md`), so this alert is based on time alone, not on whether the model has already found its answer. Use a generous `--after` (the default is 60 s; on this machine 0.8% of turns go past it). Treat the alert as advice, not a verdict.

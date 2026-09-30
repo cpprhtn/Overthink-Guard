@@ -188,7 +188,7 @@ def _claude_watch(args: argparse.Namespace) -> int:
 
     def on_alert(event: dict) -> None:
         seconds = event["stats"]["thinking_elapsed_s"]
-        message = f"Claude has been thinking for {seconds}s with no output ({event['source']['project']})"
+        message = f"Claude has been working for {seconds}s with no output yet ({event['source']['project']})"
         print(
             f"[{time.strftime('%H:%M:%S')}] {message}. Press Esc in Claude Code to stop it if it is going in circles.",
             flush=True,
@@ -299,7 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
         "claude-code", help="observe Claude Code (subscription) sessions: read-only, no credentials, no proxy"
     )
     claude_sub = claude.add_subparsers(dest="claude_command", required=True)
-    watch = claude_sub.add_parser("watch", help="notify when a turn has been thinking unusually long")
+    watch = claude_sub.add_parser("watch", help="notify when a turn has gone unusually long without output")
     watch.add_argument("--after", type=float, default=60, help="seconds of silence before notifying (default 60)")
     watch.add_argument("--hook", default="", help="command to run with the event JSON on stdin")
     watch.add_argument("--no-desktop", dest="desktop", action="store_false", help="print only")

@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # User records that do not start a model turn: local slash commands, shell escapes, interruptions.
-_NO_MODEL_CALL = ("<local-command", "<command-name>", "<command-message>", "<bash-", "[Request interrupted")
+_INTERRUPTED = "[Request interrupted"
+_NO_MODEL_CALL = ("<local-command", "<command-name>", "<command-message>", "<bash-", _INTERRUPTED)
 
 
 def _claude_dir() -> Path:
@@ -61,7 +62,9 @@ def parse_timestamp(value: str) -> float | None:
 
 def starts_model_turn(record: dict) -> bool:
     """Whether a user record hands control to the model (a prompt or a tool result)."""
-    if record.get("type") != "user" or record.get("isMeta") or record.get("isSidechain"):
+    # A compaction summary is written by Claude Code itself; after an auto-compaction the wait already under way
+    # continues, and after a manual /compact nothing follows.
+    if record.get("type") != "user" or any(record.get(k) for k in ("isMeta", "isSidechain", "isCompactSummary")):
         return False
     content = (record.get("message") or {}).get("content")
     if isinstance(content, list):
@@ -70,6 +73,22 @@ def starts_model_turn(record: dict) -> bool:
         texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
         return bool(texts) and not all(t.lstrip().startswith(_NO_MODEL_CALL) for t in texts)
     return isinstance(content, str) and not content.lstrip().startswith(_NO_MODEL_CALL)
+
+
+def _blocks(record: dict) -> list[dict]:
+    content = (record.get("message") or {}).get("content")
+    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+
+
+def _texts(record: dict) -> list[str]:
+    content = (record.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return [content]
+    return [b.get("text", "") for b in _blocks(record) if b.get("type") == "text"]
+
+
+def is_interruption(record: dict) -> bool:
+    return record.get("type") == "user" and any(t.lstrip().startswith(_INTERRUPTED) for t in _texts(record))
 
 
 def thinking_tokens(record: dict) -> int:
@@ -84,6 +103,7 @@ class _Session:
     waiting_since: float | None = None
     alerted: bool = False
     effort: str | None = None
+    pending_tools: set[str] = field(default_factory=set)
 
 
 def _run_mode(state: dict | None) -> str:
@@ -190,5 +210,16 @@ class ClaudeCodeObserver:
         if record.get("type") == "assistant":
             session.waiting_since, session.alerted = None, False
             session.effort = record.get("effort") or session.effort
+            session.pending_tools |= {b["id"] for b in _blocks(record) if b.get("type") == "tool_use" and "id" in b}
+        elif is_interruption(record) or (record.get("type") == "system" and record.get("subtype") == "api_error"):
+            # The model stopped (Esc) or its request failed: whatever follows is not thinking.
+            session.waiting_since = None
+            session.pending_tools.clear()
         elif starts_model_turn(record):
-            session.waiting_since, session.alerted = ts, False
+            results = {b.get("tool_use_id") for b in _blocks(record) if b.get("type") == "tool_result"}
+            session.pending_tools -= results
+            if not results:
+                session.pending_tools.clear()
+            # With parallel tool calls the model resumes only after the last result arrives.
+            if not session.pending_tools:
+                session.waiting_since, session.alerted = ts, False
