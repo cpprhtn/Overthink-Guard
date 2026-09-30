@@ -6,8 +6,9 @@ from dataclasses import dataclass, field
 from overthink_guard.analysis.signals import extract_boxed, normalize_answer
 
 # Probe answers can hold a wrong guess for 5000+ tokens before a late correction, so probing starts late and mainly
-# catches runaway thinking. Pre-registered rule C held C1 on 51 fresh completed runs across qwen3 and deepseek-r1
-# (docs/spikes/shadow-live-probe.md).
+# catches runaway thinking. Pre-registered rules C and D lost no correct answer on 95 fresh completed runs across qwen3
+# and deepseek-r1, but only 15 correct runs were long enough to be at risk (docs/spikes/shadow-live-probe.md,
+# bench/spikes/probe_rule_matrix.py).
 DEFAULT_PROBE_K = 4
 DEFAULT_PROBE_MIN_TOKENS = 6000
 # [가설] Open-ended questions give no grounded probe answers, so they get a plain thinking budget instead. Completed
