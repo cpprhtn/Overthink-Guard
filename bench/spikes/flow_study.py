@@ -33,6 +33,13 @@ DOUBT = re.compile(
     r"\b(wait|hmm|mistake|wrong|incorrect|actually|oops|contradict\w*|re-?examine|but no)\b", re.IGNORECASE
 )
 VERIFY = re.compile(r"\b(check\w*|verif\w*|double-check\w*|confirm\w*|sanity)\b", re.IGNORECASE)
+CUE = re.compile(r"(answer is|therefore|thus|hence|\bso\b|=|boxed)", re.IGNORECASE)
+NEW_WORK = re.compile(
+    r"\b(let'?s (?:find|compute|calculate|consider|try|solve|set up|denote)|consider the case|"
+    r"another (?:approach|way|case|method)|alternatively)\b",
+    re.IGNORECASE,
+)
+GRID_V2 = {"s": (1, 2, 3), "m": (0, 400, 800, 1200), "d": (0, 1, 2), "w": (0, 1, 2)}
 GRID = {
     "s": (2, 3),
     "n": (0, 0.1, 0.2, 0.3, 1),
@@ -73,6 +80,65 @@ def features(run: dict) -> list[dict]:
             }
         )
     return rows
+
+
+def first_conclusion(text: str, ends: list[tuple[int, int]], answer: str) -> tuple[int, int] | None:
+    """(token, char) where the thinking first states `answer` as a conclusion, or None."""
+    pattern = re.compile(r"(?<![0-9A-Za-z.])" + re.escape(answer) + r"(?![0-9A-Za-z]|\.\d)")
+    for match in pattern.finditer(text):
+        if CUE.search(text[max(0, match.start() - 60) : match.start()]):
+            token = next(tok for char_end, tok in ends if char_end >= match.end())
+            return token, match.end()
+    return None
+
+
+def features_v2(run: dict) -> list[dict]:
+    """Per probe: has the model itself concluded the probed answer, and what has it done since?"""
+    text, ends = "", []
+    for _, end, piece in run["segments"]:
+        text += piece
+        ends.append((len(text), end))
+    char_at = lambda t: max((c for c, tok in ends if tok <= t), default=0)  # noqa: E731
+    cache: dict[str, tuple[int, int] | None] = {}
+    rows = []
+    for f in run["flow"]:
+        answer = f["answer"]
+        if answer is None or not answer.strip():
+            rows.append({**f, "concluded": False})
+            continue
+        if answer not in cache:
+            cache[answer] = first_conclusion(text, ends, answer.strip())
+        found = cache[answer]
+        if found is None or found[0] > f["at"]:
+            rows.append({**f, "concluded": False})
+            continue
+        after = text[found[1] : char_at(f["at"])]
+        rows.append(
+            {
+                **f,
+                "concluded": True,
+                "since": f["at"] - found[0],
+                "new_work": len(NEW_WORK.findall(after)),
+                "doubt_since": len(DOUBT.findall(after)),
+            }
+        )
+    return rows
+
+
+def v2_rule(p: dict):
+    def rule(run: dict):
+        for f in run["flow2"]:
+            if (
+                f["concluded"]
+                and f["streak"] >= p["s"]
+                and f["since"] >= p["m"]
+                and f["doubt_since"] <= p["d"]
+                and f["new_work"] <= p["w"]
+            ):
+                return f["at"], f["answer"]
+        return None
+
+    return rule
 
 
 def flow_rule(p: dict):
@@ -128,6 +194,7 @@ def load_runs(files: list) -> list[dict]:
         for run in load(f):
             run["segments"] = by_index[int(run["id"].rsplit("#", 1)[1])]
             run["flow"] = features(run)
+            run["flow2"] = features_v2(run)
             runs.append(run)
     return runs
 
@@ -146,15 +213,17 @@ def summary(label: str, runs: list[dict], rule) -> dict:
     return m
 
 
-def pick(runs: list[dict], grid: dict) -> tuple[dict | None, dict | None]:
+def pick(runs: list[dict], grid: dict, make=None, conservative=None) -> tuple[dict | None, dict | None]:
+    make = make or flow_rule
+    conservative = conservative or (lambda p: (p["s"], -p["n"], -p["d"], p["r"], p["t0"]))
     best, best_m = None, None
     for values in itertools.product(*grid.values()):
         p = dict(zip(grid, values, strict=True))
-        m = matrix(runs, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS, rule=with_rule_d(flow_rule(p)))
+        m = matrix(runs, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS, rule=with_rule_d(make(p)))
         if m["cells"]["FP"]:
             continue
         # most savings on completed runs; ties go to the more conservative rule
-        key = (round(m["saved_completed"], 4), p["s"], -p["n"], -p["d"], p["r"], p["t0"])
+        key = (round(m["saved_completed"], 4), *conservative(p))
         if best is None or key > best[0]:
             best, best_m = (key, p), m
     return (best[1], best_m) if best else (None, None)
@@ -166,8 +235,38 @@ def main() -> None:
     parser.add_argument("--flow", type=json.loads, help="rule chosen on dev, as JSON (required with --test)")
     parser.add_argument("--baseline", type=json.loads, help="streak-only rule chosen on dev, as JSON")
     parser.add_argument("--overnight", nargs="*", type=Path, default=[])
+    parser.add_argument("--v2", action="store_true", help="second study: pick on all 210 runs, test on overnight")
+    parser.add_argument("--v2-rule", type=json.loads, help="rule chosen for the second study (with --test)")
     args = parser.parse_args()
     rule_d = lambda run: stop_point(run, DEFAULT_PROBE_K, DEFAULT_PROBE_MIN_TOKENS)  # noqa: E731
+
+    v2_conservative = lambda p: (p["s"], p["m"], -p["d"], -p["w"])  # noqa: E731
+    if args.v2 and not args.test:
+        dev = load_runs(DEV + TEST)
+        print(f"second study, development runs: {len(dev)}")
+        summary("rule D", dev, rule_d)
+        concluded = sum(any(f["concluded"] for f in r["flow2"]) for r in dev if r["correct"])
+        print(f"  correct runs where the probed answer is ever stated as a conclusion: {concluded}")
+        chosen, _ = pick(dev, GRID_V2, make=v2_rule, conservative=v2_conservative)
+        print(f"chosen rule: {chosen}")
+        if chosen:
+            summary("conclusion rule + rule D", dev, with_rule_d(v2_rule(chosen)))
+        return
+    if args.v2:
+        runs = load_runs(args.overnight)
+        print(f"second study, overnight runs: {len(runs)}")
+        d = summary("rule D", runs, rule_d)
+        f = summary("conclusion rule + rule D", runs, with_rule_d(v2_rule(args.v2_rule)))
+        c, n_correct = f["cells"], sum(r["correct"] for r in runs)
+        if n_correct < 30:
+            print(f"  only {n_correct} correct completed runs: numbers only, no verdict")
+            return
+        print(
+            f"  F1 FP<=1: {'PASS' if c['FP'] <= 1 else 'FAIL'} | F2 saved on completed >=20%: "
+            f"{'PASS' if f['saved_completed'] >= 0.20 else 'FAIL'} | F3 runaway missed <= rule D: "
+            f"{'PASS' if c['FN_runaway'] <= d['cells']['FN_runaway'] else 'FAIL'}"
+        )
+        return
 
     if not args.test:
         dev = load_runs(DEV)
