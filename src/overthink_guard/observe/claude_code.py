@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -25,6 +27,12 @@ def default_projects_dir() -> Path:
 
 def default_sessions_dir() -> Path:
     return _claude_dir() / "sessions"
+
+
+def default_flow_log_path() -> Path:
+    from overthink_guard.storage.stats import default_stats_path
+
+    return default_stats_path().with_name("claude-code-flow.jsonl")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -104,12 +112,42 @@ class _Session:
     alerted: bool = False
     effort: str | None = None
     pending_tools: set[str] = field(default_factory=set)
+    # Action flow within the current turn (docs/validation/action-flow.md): only hashes and counts are kept.
+    tool_keys: dict[str, str] = field(default_factory=dict)
+    turn_errors: int = 0
+    turn_fails: Counter = field(default_factory=Counter)
+    turn_flow_fired: set[str] = field(default_factory=set)
+
+
+def _tool_key(block: dict) -> str:
+    """A short hash of a tool call's name and input, so repeats can be matched without keeping the command."""
+    inp = block.get("input") or {}
+    detail = " ".join(str(inp["command"]).split()) if "command" in inp else json.dumps(inp, sort_keys=True)
+    return hashlib.sha256(f"{block.get('name')}|{detail}".encode()).hexdigest()[:16]
 
 
 def _run_mode(state: dict | None) -> str:
     if state is None:
         return "unknown"
     return "interactive" if state["status"] in ("busy", "idle") else "headless"
+
+
+def flow_event(session: _Session, at: float, reason: str, failed: int, run_mode: str = "unknown") -> dict:
+    """Hook event for an action-flow signal (repeated tool failures in one turn). No text from the session."""
+    return {
+        "schema_version": 1,
+        "event": "flow_signal",
+        "timestamp": datetime.fromtimestamp(at, timezone.utc).isoformat(),
+        "source": {
+            "kind": "subscription",
+            "tool": "claude_code",
+            "session_id": session.session_id,
+            "project": session.project,
+            "run_mode": run_mode,
+        },
+        "signal": {"reasons": [reason]},
+        "stats": {"failed_tool_calls_in_turn": failed},
+    }
 
 
 def alert_event(session: _Session, now: float, run_mode: str = "unknown") -> dict:
@@ -141,6 +179,8 @@ class ClaudeCodeObserver:
     recent_seconds: float = 900
     sessions_dir: Path | None = None
     pid_alive: Callable[[int], bool] = _pid_alive
+    on_flow: Callable[[dict], None] | None = None
+    _flow: list[tuple[_Session, str, int, float]] = field(default_factory=list)
     _offsets: dict[Path, int] = field(default_factory=dict)
     _partial: dict[Path, bytes] = field(default_factory=dict)
     _sessions: dict[Path, _Session] = field(default_factory=dict)
@@ -155,6 +195,10 @@ class ClaudeCodeObserver:
             for record in self._new_records(path):
                 self._apply(path, record)
         states = session_states(self.sessions_dir, self.pid_alive) if self.sessions_dir else {}
+        for session, reason, failed, at in self._flow:
+            if self._primed and self.on_flow:
+                self.on_flow(flow_event(session, at, reason, failed, _run_mode(states.get(session.session_id))))
+        self._flow.clear()
         for session in self._sessions.values():
             waited = now - session.waiting_since if session.waiting_since is not None else 0
             state = states.get(session.session_id)
@@ -210,7 +254,9 @@ class ClaudeCodeObserver:
         if record.get("type") == "assistant":
             session.waiting_since, session.alerted = None, False
             session.effort = record.get("effort") or session.effort
-            session.pending_tools |= {b["id"] for b in _blocks(record) if b.get("type") == "tool_use" and "id" in b}
+            uses = [b for b in _blocks(record) if b.get("type") == "tool_use" and "id" in b]
+            session.pending_tools |= {b["id"] for b in uses}
+            session.tool_keys.update({b["id"]: _tool_key(b) for b in uses})
         elif is_interruption(record) or (record.get("type") == "system" and record.get("subtype") == "api_error"):
             # The model stopped (Esc) or its request failed: whatever follows is not thinking.
             session.waiting_since = None
@@ -220,6 +266,26 @@ class ClaudeCodeObserver:
             session.pending_tools -= results
             if not results:
                 session.pending_tools.clear()
+                session.tool_keys.clear()
+                session.turn_errors, session.turn_fails, session.turn_flow_fired = 0, Counter(), set()
+            self._count_failures(session, record, ts)
             # With parallel tool calls the model resumes only after the last result arrives.
             if not session.pending_tools:
                 session.waiting_since, session.alerted = ts, False
+
+    def _count_failures(self, session: _Session, record: dict, ts: float) -> None:
+        for block in _blocks(record):
+            if block.get("type") != "tool_result" or not block.get("is_error"):
+                continue
+            session.turn_errors += 1
+            key = session.tool_keys.get(block.get("tool_use_id", ""))
+            if key:
+                session.turn_fails[key] += 1
+            reason = None
+            if key and session.turn_fails[key] >= 2:
+                reason = "same_fail"
+            elif session.turn_errors >= 3:
+                reason = "errors3"
+            if reason and reason not in session.turn_flow_fired:
+                session.turn_flow_fired.add(reason)
+                self._flow.append((session, reason, session.turn_errors, ts))

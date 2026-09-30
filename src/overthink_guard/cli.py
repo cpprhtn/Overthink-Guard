@@ -199,12 +199,36 @@ def _claude_watch(args: argparse.Namespace) -> int:
         if args.hook:
             run_hook(args.hook, event)
 
+    def on_flow(event: dict) -> None:
+        # Record only by default: whether these signals mark wasted work is still being measured
+        # (docs/validation/action-flow.md). The log holds counts, reasons and ids, never commands or text.
+        if args.flow_log:
+            args.flow_log.parent.mkdir(parents=True, exist_ok=True)
+            with args.flow_log.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event) + "\n")
+        if args.flow_alerts:
+            failed = event["stats"]["failed_tool_calls_in_turn"]
+            message = f"{failed} tool calls have failed in this turn ({event['source']['project']})"
+            print(f"[{time.strftime('%H:%M:%S')}] {message}.", flush=True)
+            if args.desktop:
+                notify("Overthink Guard", message + ".")
+            if args.hook:
+                run_hook(args.hook, event)
+
+    if args.flow_log is None and not args.no_flow_log:
+        from overthink_guard.observe import default_flow_log_path
+
+        args.flow_log = default_flow_log_path()
+    if args.no_flow_log:
+        args.flow_log = None
     observer = ClaudeCodeObserver(
-        args.projects_dir, args.after, on_alert, sessions_dir=args.projects_dir.parent / "sessions"
+        args.projects_dir, args.after, on_alert, sessions_dir=args.projects_dir.parent / "sessions", on_flow=on_flow
     )
     print(
         f"Watching {args.projects_dir} (read-only; no credentials, no requests). "
-        f"Alert after {args.after:g}s of silence.",
+        f"Alert after {args.after:g}s of silence. "
+        f"Repeated tool failures: {'alert and ' if args.flow_alerts else ''}"
+        f"{'record to ' + str(args.flow_log) if args.flow_log else 'not recorded'}.",
         flush=True,
     )
     try:
@@ -216,9 +240,10 @@ def _claude_watch(args: argparse.Namespace) -> int:
 
 
 def _claude_report(args: argparse.Namespace) -> int:
-    from overthink_guard.observe import usage_report
+    from overthink_guard.observe import default_flow_log_path, flow_review, usage_report
 
     report = usage_report(args.projects_dir, days=args.days)
+    report["flow"] = flow_review(args.projects_dir, args.flow_log or default_flow_log_path())
     if args.json:
         json.dump(report, sys.stdout, indent=2)
         print()
@@ -238,8 +263,15 @@ def _claude_report(args: argparse.Namespace) -> int:
     print(f"  wait before first output: median {s['p50']}s, p90 {s['p90']}s, over 60s in {s['over_60s']} turns")
     if report["thinking_share"] >= 0.5:
         print(
-            "  → Thinking is most of your output. For routine edits, a lower effort (/effort or --effort) "
-            "is likely to cut usage with little loss."
+            "  → Thinking is most of your output. A lower effort (/effort or --effort) would cut it; how much that "
+            "costs in answer quality has not been measured yet."
+        )
+    f = report["flow"]
+    if f["signals"]:
+        print(
+            f"  repeated tool failures: {f['signals']} signals {f['by_reason']}; afterwards the user stopped the turn "
+            f"{f['stopped_by_user']} times; median after the signal: {f['median_tools_after']:.0f} more tool calls, "
+            f"{f['median_failed_after']:.0f} more failures, {f['median_seconds_after']:.0f}s"
         )
     return 0
 
@@ -304,10 +336,14 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--after", type=float, default=60, help="seconds of silence before notifying (default 60)")
     watch.add_argument("--hook", default="", help="command to run with the event JSON on stdin")
     watch.add_argument("--no-desktop", dest="desktop", action="store_false", help="print only")
+    watch.add_argument("--flow-log", type=Path, help="where repeated-failure signals are recorded (JSONL, counts only)")
+    watch.add_argument("--no-flow-log", action="store_true", help="do not record repeated-failure signals")
+    watch.add_argument("--flow-alerts", action="store_true", help="also alert on repeated tool failures in a turn")
     watch.set_defaults(func=_claude_watch)
     report = claude_sub.add_parser("report", help="how much output went to thinking, per effort level")
     report.add_argument("--days", type=float, help="only the last N days")
     report.add_argument("--json", action="store_true")
+    report.add_argument("--flow-log", type=Path, help="repeated-failure log to review (default: the watch default)")
     report.set_defaults(func=_claude_report)
     for p in (watch, report):
         p.add_argument("--projects-dir", type=Path, default=None, help="default ~/.claude/projects")

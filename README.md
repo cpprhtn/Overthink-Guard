@@ -71,12 +71,14 @@ Claude Code does not show its thinking while it happens. Headless stream-json ca
 otg claude-code watch            # desktop alert when a turn has gone 60s without output
 otg claude-code watch --after 90 --hook "your-command"   # also pass a stop_suggested event (JSON on stdin)
 otg claude-code report --days 7  # thinking tokens per effort level, share of output spent on thinking
+                                 # and what followed repeated tool failures recorded by watch
 ```
 
 - It reads `~/.claude/projects/*/*.jsonl` (only record types, timestamps, effort and token counts; message text is neither kept nor sent) and the session status files in `~/.claude/sessions/*.json`. It never opens credential or key files, never proxies requests, and never interrupts a session.
 - Alerts are advice based on time alone. On the author's machine, 0.8% of turns were silent for over 60 s. In a pre-registered check ([`docs/validation/subscription.md`](docs/validation/subscription.md)), replaying 66 real sessions gave 96.5% precision and 100% recall at 60 s. That measures whether Claude was really still working when alerted, not whether stopping it then would have been right. In live headless runs, every turn that went past the threshold was alerted within 1 s of it (one ran for 593 s and 64k thinking tokens), and short, aborted and interrupted runs got no alert.
 - To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). Don't, at 60 s: in a pre-registered test (V7), Sonnet turns that went past 60 s were right 8 of 9 times when left alone and 4 of 9 times when stopped at the alert, because the interrupted thinking is lost. On these problems long turns were needed thinking, not overthinking. That is why stopping is not built in, and why the alert only tells you a turn is taking long.
 - `report` counts only turns that finished: tokens spent before an interrupt are not in the logs.
+- `watch` also records turns where tool calls keep failing (the same call failing twice, or three failures in one turn) to a local log of counts and ids, without commands or text. It does not alert on them unless you pass `--flow-alerts`: in a first look at real sessions these failures came before the user stopping the turn more often than time or tool count did, but on 3 of 18 stops only (`docs/validation/action-flow.md`). `report` shows what followed each one, so that can be measured on your own use.
 - Claude Code's local file formats are internal and may change between releases. Tested with Claude Code 2.1.233.
 
 ## Configuration

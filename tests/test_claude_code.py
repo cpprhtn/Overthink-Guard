@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from overthink_guard.notify import notification_command, run_hook
-from overthink_guard.observe import ClaudeCodeObserver, session_states, starts_model_turn, usage_report
+from overthink_guard.observe import ClaudeCodeObserver, flow_review, session_states, starts_model_turn, usage_report
 
 T0 = 1_790_000_000.0
 
@@ -331,3 +331,80 @@ def test_observer_and_report_only_read_and_never_open_key_files_or_sockets(tmp_p
     assert len(alerts) == 1
     assert opened and not [path for path, _ in opened if path.endswith(".key")]
     assert all(set(mode) <= set("rbt") for _, mode in opened)
+
+
+def bash_use(seconds, tool_id, command, msg_id="m1"):
+    block = {"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}
+    return {
+        "type": "assistant",
+        "timestamp": ts(seconds),
+        "sessionId": "s1",
+        "message": {"id": msg_id, "content": [block]},
+    }
+
+
+def failed(seconds, tool_id):
+    block = {"type": "tool_result", "tool_use_id": tool_id, "content": "boom", "is_error": True}
+    return user(seconds, [block])
+
+
+def run_flow(root, append, records, end=100):
+    clock, flows = Clock(), []
+    observer = ClaudeCodeObserver(root, 60, lambda e: None, clock=clock, on_flow=flows.append)
+    observer.poll()
+    for r in records:
+        append(r)
+    clock.now = T0 + end
+    observer.poll()
+    return flows
+
+
+def test_repeated_failures_are_signalled_once_per_reason_per_turn(log):
+    root, append = log
+    records = [
+        user(0),
+        bash_use(1, "a", "pytest -q"),
+        failed(2, "a"),
+        bash_use(3, "b", "pytest  -q"),
+        failed(4, "b"),
+        bash_use(5, "c", "make"),
+        failed(6, "c"),
+        bash_use(7, "d", "pytest -q"),
+        failed(8, "d"),
+    ]
+    flows = run_flow(root, append, records)
+    assert [e["signal"]["reasons"] for e in flows] == [["same_fail"], ["errors3"]]
+    assert flows[1]["stats"]["failed_tool_calls_in_turn"] == 3
+    assert "pytest" not in json.dumps(flows) and "boom" not in json.dumps(flows)
+
+
+def test_flow_counts_reset_on_a_new_prompt_and_skip_history_at_startup(log):
+    root, append = log
+    append(user(0), bash_use(1, "a", "x"), failed(2, "a"))
+    clock, flows = Clock(), []
+    observer = ClaudeCodeObserver(root, 60, lambda e: None, clock=clock, on_flow=flows.append)
+    observer.poll()
+    append(bash_use(3, "b", "y"), failed(4, "b"), user(5, "next task"), bash_use(6, "c", "x"), failed(7, "c"))
+    clock.now = T0 + 10
+    observer.poll()
+    assert flows == []
+
+
+def test_flow_review_reports_what_followed_each_signal(log, tmp_path):
+    root, append = log
+    records = [
+        user(0),
+        bash_use(1, "a", "pytest"),
+        failed(2, "a"),
+        bash_use(3, "b", "pytest"),
+        failed(4, "b"),
+        bash_use(10, "c", "ls", msg_id="m2"),
+        user(20, [{"type": "text", "text": "[Request interrupted by user]"}]),
+    ]
+    flows = run_flow(root, append, records)
+    flow_log = tmp_path / "flow.jsonl"
+    event = {**flows[0], "timestamp": ts(4)}
+    flow_log.write_text(json.dumps(event) + "\n")
+    review = flow_review(root, flow_log)
+    assert (review["signals"], review["stopped_by_user"], review["median_tools_after"]) == (1, 1, 1)
+    assert review["median_seconds_after"] == 16
