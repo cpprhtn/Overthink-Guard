@@ -27,6 +27,7 @@
   - Shadow 기록: 끝까지 생각한 요청마다 Tier 0과 탐침이 각각 어디서 끊었을지, 그때 답이 같았는지를 통계로만 로컬 JSONL에 남긴다.
   - UI 누적 요약
 - v0.3 일부 완료: **Auto 모드(runaway guard)**. 실제 폭주 문제(deepseek-r1, 원래 12,000토큰에서도 답 없음)를 7,202토큰에서 끊고 정답을 냈다.
+- v0.6 일부 완료(구독형, Claude Code): S4에서 생각 도중의 thinking 내용은 어떤 경로로도 볼 수 없다고 확인했다(R14). 대신 **침묵 시간 알림**(`otg claude-code watch`, 데스크톱 알림과 훅 이벤트 6.2)과 **사후 사용량 리포트**(`otg claude-code report`)를 만들었다. 헤드리스 자동 중단은 레시피 문서만 있다(D7). `docs/spikes/s4-claude-code.md`
 - 앞당긴 것:
   - Tier 2 능동 탐침: 선택 기능, 기본 꺼짐(`--probe`). 멈춤 → 탐침 → 재개 방식이다. Tier 0이 기대에 못 미쳐(아래) 비교 데이터를 모으려고 v0.3에서 앞당겼다.
   - YAML 설정 파일(6.1의 일부)
@@ -756,7 +757,7 @@ v0.4 상태: 백엔드가 Ollama 하나뿐이라 이 인터페이스는 아직 �
 | S1 | Ollama: 추론 모델(Qwen3, DeepSeek-R1 distill)에서 thinking이 어떤 형태로 스트리밍되는가(별도 필드인지 태그인지). raw 모드로 "질문 + thinking 일부 + 종료 표기" prefix를 넣어 이어 생성이 되는가. 반복 호출 시 prefix 캐시 효과는 | 로컬 주입/탐침 구현 방식, 오버헤드 | **완료 (Ollama 0.34.4, qwen3:1.7b).** 별도 필드(`message.thinking` / `delta.reasoning`). raw 대신 assistant prefill로 주입하면 템플릿 재구현이 필요 없다. thinking 앞에 `"\n"`을 붙이면 캐시 97% 적중. 재개(S1-b)는 `content`에 `"<think>\n"+thinking`, 캐시 250/251 적중 (`s1-s8-t2-ollama.md`) |
 | S2 | llama.cpp server: raw prompt 이어 생성과 프롬프트 캐시 재사용 시 실제 지연 | 탐침 간격 기본값 | 미착수 |
 | S3 | LM Studio: OpenAI 호환 엔드포인트 외에 raw 이어 생성 경로가 있는가 | 없으면 LM Studio는 Watch/Shadow만, Auto 제외 | 미착수 |
-| S4 | Claude Code: 비대화형 모드의 JSON 스트림 출력(부분 메시지 포함 옵션 등)에서 **생각 도중** thinking 요약 조각이 나오는가. 대화형 세션의 세션 JSONL은 thinking을 언제 기록하는가(실시간/블록 종료 후) | 구독형 실시간 관측 가능 여부 (R14) | 미착수 |
+| S4 | Claude Code: 비대화형 모드의 JSON 스트림 출력(부분 메시지 포함 옵션 등)에서 **생각 도중** thinking 요약 조각이 나오는가. 대화형 세션의 세션 JSONL은 thinking을 언제 기록하는가(실시간/블록 종료 후) | 구독형 실시간 관측 가능 여부 (R14) | **완료 (CLI 2.1.233).** stream-json의 `thinking_delta`는 실시간으로 오지만 항상 비어 있다. 세션 JSONL은 thinking 블록을 끝난 뒤에 기록한다. 실시간 신호는 침묵 시간과 `~/.claude/sessions/<pid>.json`의 상태뿐이다 (`s4-claude-code.md`) |
 | S5 | Codex: 세션 rollout JSONL에 reasoning 요약이 조각 단위로 실시간 기록되는가. IDE 연동용 공식 프로토콜에서 요약 delta와 턴 중단을 지원하는가 | 구독형 실시간 관측 가능 여부, 레시피 작성 가능 여부 | 미착수 |
 | S6 | Anthropic/OpenAI/OpenRouter 스트리밍에서 thinking/요약 이벤트 형식과 usage의 reasoning 토큰 필드 | API 모드 파서, 비용 계기판 | 미착수 |
 | S7 | 각 OS에서 관리자 권한 없이 설치·실행(포트 바인딩, 알림 권한) | C4 | 부분: macOS에서 설치·실행 확인. 3 OS CI에서 테스트 |
@@ -806,7 +807,7 @@ v0.4 상태: 백엔드가 Ollama 하나뿐이라 이 인터페이스는 아직 �
 | v0.3 | 자동 | Tier 0 신호 완성, Tier 1(S8 결과에 따라), Auto(4조건), 헤드리스, llama.cpp 백엔드, 선택 옵션으로 Tier 2 탐침 | C3, C5 충족 | **일부 완료**: Auto = runaway guard(D15), 탐침(선택), 헤드리스 동작. Tier 1은 S8에서 신호 없음. llama.cpp 백엔드는 미착수 |
 | v0.4 | 증명 | 노트북 3종 공개 벤치마크. Tier 0만 / 0+1 / 0+1+2 비교 | C1, C2 판정, Tier 2 기본값 확정 | 진행 중. Apple Silicon에서 Tier 0 vs Tier 2 실측(37문제), held-out 검증 1회(k=4 과적합 확인 → 규칙 수정), CPU 전용 오버헤드(Apple Silicon), deepseek-r1 비호환 확인. 세 번째 표본, x86 CPU, 다른 모델 계열은 미완 |
 | v0.5 | API | API 모드(관측/수동/비용/effort 추천), LM Studio | C6, C7 점검 | 미착수 |
-| v0.6 | 구독형 | S4, S5 결과에 따라 Notify 모드, 훅 이벤트 v1, 레시피 문서(R15 원칙) 또는 사후 분석 모드 | C9 점검 | 미착수 |
+| v0.6 | 구독형 | S4, S5 결과에 따라 Notify 모드, 훅 이벤트 v1, 레시피 문서(R15 원칙) 또는 사후 분석 모드 | C9 점검 | **Claude Code 일부 완료**: 침묵 시간 알림, 훅 이벤트 v1, 사후 리포트, 헤드리스 레시피. 내용 기반 판정은 불가(S4). Codex(S5)는 미착수 |
 | v1.0 | 공개 출시 | 템플릿 레지스트리 문서, 단일 실행 파일, 보안 문서, 데모 GIF | 8.1 모든 기준 충족 | 미착수 (README 초안만 있음) |
 
 구독형 스파이크(S4, S5)는 구현은 v0.6이지만 **조사는 초기에 해 두는 것이 좋다**. 결과가 README의 약속 범위와 홍보 메시지에 영향을 준다.
@@ -843,7 +844,7 @@ v0.4 상태: 백엔드가 Ollama 하나뿐이라 이 인터페이스는 아직 �
 3. S2~S7 스파이크 결과 (S1, S8, 실시간 탐침은 v0.4에서 완료, 12.4)
 4. Shadow 모드의 "답이 달라졌다" 판정: 서술형 답은 동일성 판정이 어려움. 서술형을 통계에서 제외할지. (v0.4: 추출된 답이 없으면 match를 "unknown"으로 기록한다. 탐침은 `\boxed{}` 답을 전제로 하므로 서술형·객관식에서는 수렴하지 않는다)
 5. Dynasor 코드(MIT) 일부 차용 여부
-6. 구독형 관측에서 대화형 세션과 헤드리스 세션을 구분하는 방법(`run_mode` 판별)
+6. 구독형 관측에서 대화형 세션과 헤드리스 세션을 구분하는 방법(`run_mode` 판별) → Claude Code는 `~/.claude/sessions/<pid>.json`의 `status`로 구분한다(대화형 busy/idle, 헤드리스는 비어 있음). `kind`/`entrypoint`는 부모 세션의 환경을 물려받아 믿을 수 없다
 7. 데스크톱 알림의 크로스플랫폼 구현 방식과 권한 요구
 8. 이름 확정. 원래 가칭 "ThinkBrake"는 같은 주제의 연구(서울대, ACL 2026 Findings, 17.1)가 이미 쓰고 있어 폐기. "Overthinking Safeguard"는 2026-09-29 기준 PyPI·GitHub 중복 없음. 단 "safeguard"가 AI 분야에서 콘텐츠 안전 가드레일을 연상시킬 수 있다는 점은 고려 사항. CLI 약칭(`osg` 가안) 확정 필요. → **해결: Overthink Guard / `otg` (D13)**
 9. 출시 직전 Anthropic·OpenAI 최신 약관 재확인 (특히 구독형 관련)

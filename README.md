@@ -63,6 +63,21 @@ These results come from one small model, math questions only, and small samples,
 | Same guard with the one-line cross-check, rule fixed beforehand: 48 new design prompts (open designs, design decisions, code bugs, some in Korean) and 60 new math problems | None of the 46 completed design answers and none of the 44 completed math answers were cut or changed. It stopped all 18 runaway runs; the design ones gave a correct choice and a correct bug explanation where waiting produced nothing. |
 | Probe cost | ~4.7% of wall time on Apple Silicon GPU, ~5% CPU-only; each probe hits the KV cache |
 
+## Claude Code (subscription)
+
+Claude Code does not show its thinking while it happens. Headless stream-json carries empty thinking deltas, and the session log gets each thinking block only after it ends. So Overthink Guard cannot judge Claude's reasoning live. What it can see is how long a turn has gone without any output, and how much of your usage went to thinking.
+
+```bash
+otg claude-code watch            # desktop alert when a turn has been silent for 60s; press Esc to stop it
+otg claude-code watch --after 90 --hook "your-command"   # also pass a stop_suggested event (JSON on stdin)
+otg claude-code report --days 7  # thinking tokens per effort level, share of output spent on thinking
+```
+
+- It reads `~/.claude/projects/*/*.jsonl` (only record types, timestamps, effort and token counts; message text is neither kept nor sent) and the session status files in `~/.claude/sessions/*.json`. It never opens credential or key files, never proxies requests, and never interrupts a session.
+- Alerts are advice based on time alone. On the author's machine, 0.8% of turns were silent for over 60 s.
+- To stop long **headless** runs automatically, you can wire the alert to Claude Code's documented SIGINT yourself: see [`docs/recipes/claude-code-headless.md`](docs/recipes/claude-code-headless.md). In testing, stopping that early once produced a wrong answer, which is why this is not built in.
+- Claude Code's local file formats are internal and may change between releases. Tested with Claude Code 2.1.233.
+
 ## Configuration
 
 Flags override the config file, and the config file overrides the defaults. The file lives at `~/.config/overthink-guard/config.yaml` (`%APPDATA%\overthink-guard\config.yaml` on Windows) or wherever `--config` points. Unknown keys are rejected, not ignored.
@@ -97,7 +112,7 @@ privacy:
 - Shadow statistics are counts and true/false flags only; no prompt, thinking or answer text is stored. By default they go to `~/Library/Application Support/overthink-guard/shadow.jsonl` on macOS, `~/.local/share/overthink-guard/` on Linux, and `%LOCALAPPDATA%\overthink-guard\` on Windows.
 - The live UI shows thinking text from memory; nothing is written to disk.
 - No telemetry.
-- Overthink Guard does not read, use or proxy subscription credentials for Claude Code, Codex or any other tool.
+- Overthink Guard does not read, use or proxy subscription credentials for Claude Code, Codex or any other tool. For Claude Code it only reads local session logs and status files, and it keeps no message text.
 
 ## Known limitations
 
