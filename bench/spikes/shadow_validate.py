@@ -18,14 +18,22 @@ from overthink_guard.analysis.signals import extract_boxed, normalize_answer
 MULTIPLE_CHOICE = re.compile(r"\(A\)|\bA[.)]\s|\(a\)|options|choices", re.I)
 
 
-def held_out(cache: Path, skip: int, start: int, count: int) -> list[tuple[str, str]]:
+def held_out(cache: Path, skip: int, start: int, count: int, hard_first: bool = False) -> list[tuple[str, str]]:
+    """Integer-answer OpenR1 problems after the first `skip`; hard_first orders [start:] by mean R1 solution length."""
     rows = []
     files = sorted(glob.glob(str(cache / "openr1_math_*.json")), key=lambda p: int(re.search(r"_(\d+)\.json", p)[1]))
     for f in files:
         rows += [r["row"] for r in json.loads(Path(f).read_text(encoding="utf-8"))["rows"]]
-    short = [(r["problem"], r["answer"].strip()) for r in rows if re.fullmatch(r"-?\d+", r["answer"].strip())]
+    short = [
+        (r["problem"], r["answer"].strip(), sum(map(len, r["generations"])) / max(1, len(r["generations"])))
+        for r in rows
+        if re.fullmatch(r"-?\d+", r["answer"].strip())
+    ]
     short = [p for p in short if len(p[0]) < 260]
-    return [p for p in short[skip:] if not MULTIPLE_CHOICE.search(p[0])][start : start + count]
+    pool = [p for p in short[skip:] if not MULTIPLE_CHOICE.search(p[0])][start:]
+    if hard_first:
+        pool.sort(key=lambda p: -p[2])
+    return [(q, a) for q, a, _ in pool[:count]]
 
 
 def session_state(proxy: str, session: str) -> tuple[dict, list, list]:
@@ -59,42 +67,54 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    client = OpenAI(base_url=f"{args.proxy}/v1", api_key="unused")
-    data = {"note": f"{args.model}, held-out OpenR1 problems {args.start}-{args.start + args.count - 1} after the first {args.skip}", "problems": [], "ungradable": []}
-    for i, (question, gold) in enumerate(held_out(args.cache, args.skip, args.start, args.count)):
-        content, session = "", None
-        messages = [{"role": "user", "content": question}]
-        stream = client.chat.completions.create(
-            model=args.model, stream=True, messages=messages, max_tokens=args.max_tokens
-        )
-        finish = None
-        for chunk in stream:
-            session = session or chunk.id.rsplit("-", 1)[-1]
-            if chunk.choices and chunk.choices[0].delta.content:
-                content += chunk.choices[0].delta.content
-            if chunk.choices and chunk.choices[0].finish_reason:
-                finish = chunk.choices[0].finish_reason
-        boxed = extract_boxed(content)
-        final = normalize_answer(boxed[-1][1]) if boxed and finish != "length" else None
-        summary, probes, segments = session_state(args.proxy, session)
-        shadow = summary.get("shadow") or {}
-        data["problems"].append(
-            {
-                "gold": gold,
-                "final": final,
-                "final_correct": final == gold,
-                "truncated": finish == "length",
-                "thinking_tokens": shadow.get("thinking_tokens", summary.get("thinking_tokens")),
-                "tier0_stop": (shadow.get("tier0") or {}).get("stop_at"),
-                "probes": probes,
-                "segments": segments,
-            }
-        )
-        if finish == "length":
-            data["ungradable"].append(i)
-        args.out.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        print(f"{i:2d} gold={gold:>7} final={final!s:>8} ok={final == gold!s:5} "
-              f"think={data['problems'][-1]['thinking_tokens']} probes={len(probes)} finish={finish}", flush=True)
+    span = f"{args.start}-{args.start + args.count - 1}"
+    data = {
+        "note": f"{args.model}, held-out OpenR1 problems {span} after the first {args.skip}",
+        "problems": [],
+        "ungradable": [],
+    }
+    for question, gold in held_out(args.cache, args.skip, args.start, args.count):
+        collect(args.proxy, args.model, question, gold, args.max_tokens, data, args.out)
+
+
+def collect(proxy: str, model: str, question: str, gold: str, max_tokens: int, data: dict, out: Path) -> None:
+    """Runs one problem through the proxy and appends its probe trail to data (saved to out after every run)."""
+    i = len(data["problems"])
+    client = OpenAI(base_url=f"{proxy}/v1", api_key="unused", timeout=3600)
+    content, session = "", None
+    messages = [{"role": "user", "content": question}]
+    stream = client.chat.completions.create(model=model, stream=True, messages=messages, max_tokens=max_tokens)
+    finish = None
+    for chunk in stream:
+        session = session or chunk.id.rsplit("-", 1)[-1]
+        if chunk.choices and chunk.choices[0].delta.content:
+            content += chunk.choices[0].delta.content
+        if chunk.choices and chunk.choices[0].finish_reason:
+            finish = chunk.choices[0].finish_reason
+    boxed = extract_boxed(content)
+    final = normalize_answer(boxed[-1][1]) if boxed and finish != "length" else None
+    summary, probes, segments = session_state(proxy, session)
+    shadow = summary.get("shadow") or {}
+    data["problems"].append(
+        {
+            "gold": gold,
+            "final": final,
+            "final_correct": final == gold,
+            "truncated": finish == "length",
+            "thinking_tokens": shadow.get("thinking_tokens", summary.get("thinking_tokens")),
+            "tier0_stop": (shadow.get("tier0") or {}).get("stop_at"),
+            "probes": probes,
+            "segments": segments,
+        }
+    )
+    if finish == "length":
+        data["ungradable"].append(i)
+    out.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    print(
+        f"{i:2d} gold={gold:>7} final={final!s:>8} ok={final == gold!s:5} "
+        f"think={data['problems'][-1]['thinking_tokens']} probes={len(probes)} finish={finish}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
