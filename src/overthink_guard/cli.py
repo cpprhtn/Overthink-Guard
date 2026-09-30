@@ -180,6 +180,69 @@ def _start(args: argparse.Namespace) -> int:
     return 0
 
 
+def _claude_watch(args: argparse.Namespace) -> int:
+    import time
+
+    from overthink_guard.notify import notify, run_hook
+    from overthink_guard.observe import ClaudeCodeObserver
+
+    def on_alert(event: dict) -> None:
+        seconds = event["stats"]["thinking_elapsed_s"]
+        message = f"Claude has been thinking for {seconds}s with no output ({event['source']['project']})"
+        print(
+            f"[{time.strftime('%H:%M:%S')}] {message}. Press Esc in Claude Code to stop it if it is going in circles.",
+            flush=True,
+        )
+        if args.desktop:
+            notify("Overthink Guard", message + ". Esc stops it.")
+        if args.hook:
+            run_hook(args.hook, event)
+
+    observer = ClaudeCodeObserver(
+        args.projects_dir, args.after, on_alert, sessions_dir=args.projects_dir.parent / "sessions"
+    )
+    print(
+        f"Watching {args.projects_dir} (read-only; no credentials, no requests). "
+        f"Alert after {args.after:g}s of silence.",
+        flush=True,
+    )
+    try:
+        while True:
+            observer.poll()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        return 0
+
+
+def _claude_report(args: argparse.Namespace) -> int:
+    from overthink_guard.observe import usage_report
+
+    report = usage_report(args.projects_dir, days=args.days)
+    if args.json:
+        json.dump(report, sys.stdout, indent=2)
+        print()
+        return 0
+    span = f"last {args.days:g} days" if args.days else "all local sessions"
+    print(f"Claude Code reasoning usage ({span}): {report['responses']:,} responses")
+    print(
+        f"  thinking {report['thinking_tokens']:,} of {report['output_tokens']:,} output tokens "
+        f"({report['thinking_share']:.0%})"
+    )
+    for effort, row in report["by_effort"].items():
+        print(
+            f"  effort {effort:8} {row['responses']:6,} responses, thinking median {row['median_thinking']:,.0f} "
+            f"/ p90 {row['p90_thinking']:,.0f} tokens"
+        )
+    s = report["silence_seconds"]
+    print(f"  wait before first output: median {s['p50']}s, p90 {s['p90']}s, over 60s in {s['over_60s']} turns")
+    if report["thinking_share"] >= 0.5:
+        print(
+            "  → Thinking is most of your output. For routine edits, a lower effort (/effort or --effort) "
+            "is likely to cut usage with little loss."
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="otg", description="Overthink Guard")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -231,11 +294,31 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--stats-file", type=Path, help="where Shadow statistics are appended (JSONL)")
     start.add_argument("--no-stats", action="store_true", help="keep Shadow statistics in memory only")
     start.set_defaults(func=_start)
+
+    claude = sub.add_parser(
+        "claude-code", help="observe Claude Code (subscription) sessions: read-only, no credentials, no proxy"
+    )
+    claude_sub = claude.add_subparsers(dest="claude_command", required=True)
+    watch = claude_sub.add_parser("watch", help="notify when a turn has been thinking unusually long")
+    watch.add_argument("--after", type=float, default=60, help="seconds of silence before notifying (default 60)")
+    watch.add_argument("--hook", default="", help="command to run with the event JSON on stdin")
+    watch.add_argument("--no-desktop", dest="desktop", action="store_false", help="print only")
+    watch.set_defaults(func=_claude_watch)
+    report = claude_sub.add_parser("report", help="how much output went to thinking, per effort level")
+    report.add_argument("--days", type=float, help="only the last N days")
+    report.add_argument("--json", action="store_true")
+    report.set_defaults(func=_claude_report)
+    for p in (watch, report):
+        p.add_argument("--projects-dir", type=Path, default=None, help="default ~/.claude/projects")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "claude_command", None) and args.projects_dir is None:
+        from overthink_guard.observe import default_projects_dir
+
+        args.projects_dir = default_projects_dir()
     return args.func(args)
 
 
