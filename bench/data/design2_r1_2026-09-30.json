@@ -1,0 +1,687 @@
+[
+ {
+  "i": 0,
+  "category": "open",
+  "prompt": "Design a distributed job scheduler that runs each job exactly once per schedule slot across 3 regions and tolerates a full region outage. Explain the trade-offs.",
+  "finish": "stop",
+  "thinking_tokens": 3753,
+  "final": "To design a distributed job scheduler that runs each job exactly once per schedule slot across three regions and tolerates full region outages, we need to consider a robust system with fault tolerance, master key systems, and load balancing. Here's a structured approach to the design:\n\n### 1. Master Key System\n- **Unique Master Key**: Each node has a unique master key based on its region identifier and current state (active or outage). This ensures that nodes are assigned a unique identifier for each region.\n- **State Management**: Nodes maintain a state indicating the current master key and the current time. This state is updated to reflect the region's operational status.\n- **Redistribution Logic**: When a region goes out, the master key is recalculated to point to a new node that handles the region. If rerouting is needed, a new master key is assigned to handle the current load.\n\n### 2. Node Architecture\n- **Unique Identifier**: Each node has a unique identifier to distinguish itself from others.\n- **Local Master Key**: Each node maintains a local master key, which is a combination of its unique identifier and the region's master key.\n- **State of Regions**: Nodes track the operational status of each region (active or outage) to determine which node handles the job.\n\n### 3. Job Scheduling\n- **Job Selection**: Each job is assigned to the region with the most recent master key. If the region is in a full-outage state, the job is rerouted to the next available node.\n- **Rerouting Logic**: When a region is out, the master key is recalculated, and the job is redirected to the new master key's node. If necessary, multiple nodes are used for rerouting.\n\n### 4. Load Balancing\n- **Node State Tracking**: Each node tracks the number of jobs assigned to it to ensure even distribution across regions.\n- **Redistribution Algorithm**: If a region has too many jobs, nodes redistribute them to balance load, ensuring no single region becomes overloaded.\n\n### 5. Communication and Synchronization\n- **Communication Protocol**: Each node maintains a communication channel with others for timely data exchange.\n- **Timestamps**: Use timestamps to ensure reliable and asynchronous communication between nodes.\n\n### 6. Fault Tolerance and Redundancy\n- **Redundant Master Keys**: Each node's master key points to a unique node within its region to handle full outages.\n- **Leader Election**: A leader node is chosen when all regions are out to reroute jobs and ensure the correct node is responsible for each job.\n\n### 7. Load Balancing and Redundancy\n- **Load Balancing Algorithm**: Nodes balance jobs by redistributing them across multiple regions, ensuring efficient use of resources.\n- **Redundant Node Setup**: Having multiple nodes in each region ensures that even if one node goes out, the job is rerouted to another node.\n\n### 8. Implementation Considerations\n- **Distributed File System**: Utilize a distributed file system (like dask or distributed storage) for each region to facilitate file access based on the master key.\n- **Communication Protocols**: Implement efficient communication protocols to handle asynchronous and potentially large-scale data exchange.\n\n### Conclusion\nBy integrating a master key system, load balancing, and fault tolerance mechanisms, the distributed job scheduler ensures each job runs once per schedule slot across three regions, tolerates full region outages, and efficiently manages load balancing. The system's fault tolerance and redundancy strategies ensure robustness, even in the face of outages and node failures.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "3",
+    false
+   ],
+   [
+    800,
+    "3",
+    false
+   ],
+   [
+    1200,
+    "3",
+    false
+   ],
+   [
+    1600,
+    "3",
+    false
+   ],
+   [
+    2000,
+    "3",
+    false
+   ],
+   [
+    2400,
+    "3",
+    false
+   ],
+   [
+    2800,
+    "3",
+    false
+   ],
+   [
+    3200,
+    "3",
+    false
+   ],
+   [
+    3600,
+    "3",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 1,
+  "category": "open",
+  "prompt": "Design the data model and APIs for a hotel booking system that prevents double booking under high concurrency, supports holds that expire after 10 minutes, and handles partial refunds.",
+  "finish": "stop",
+  "thinking_tokens": 1003,
+  "final": "Creating a hotel booking system that prevents double bookings under high concurrency, supports holds that expire after 10 minutes, and handles partial refunds involves designing a data model and APIs. Below is a detailed explanation of how you can approach this:\n\n---\n\n### **1. Data Model**\n\n#### **1.1 User Table**\n- **User_ID**: Unique identifier for each user.\n- **Name**: User's full name.\n- **Email**: Email address.\n- **Phone**: Phone number.\n- **Date_Born**: Date of birth.\n- **Status**: Current status (e.g., checking availability, confirmed booking, canceled).\n\n#### **1.2 Booking Table**\n- **Booking_ID**: Unique identifier for each booking (incremented for each new booking).\n- **User_ID**: Identifier for the user who made the booking.\n- **Booking_Nr**: Book ID number.\n- **Room_Nr**: Room number.\n- **Date_Binding**: Booking date.\n- **Date_Cancel**: Date the user canceled the booking.\n- **Status_Binding**: Status when the booking was made (e.g., checking availability, confirmed, canceled).\n- **Status_Cancel**: Status when the user canceled the booking.\n- **Refund_Sum**: Total refund amount (if any).\n- **Confirm_Elem**: Confirmation email sent to the user.\n\n#### **1.3 Double Booking Association Table**\n- **Booking1_ID**: Identifier for the first booking.\n- **Booking2_ID**: Identifier for the second booking.\n- **User_ID**: Identifier for the user who made both bookings.\n- **Date_Binding**: Date when the first booking was made.\n- **Date_Cancel**: Date when the second booking was canceled.\n- **Conflict_Canceled**: Whether both bookings were canceled by the same user.\n\n#### **1.4 Hold Table**\n- **Hold_ID**: Unique identifier for a hold.\n- **Date_Okied**: Date the hold was created (same as the cancellation date).\n- **Expiration_Date**: Date the hold expires (10 minutes after cancellation).\n- **Hold_Name**: Name of the hold (e.g., Business Class).\n- **Total_Tenues**: Number of rooms in the hold.\n- **Rooms_Okied**: Total rooms in the hold.\n- **Rooms_Filled**: Number of rooms currently occupied.\n- **Accommodating_Tenues**: Number of rooms available for booking.\n\n#### **1.5 Holds Associated Table**\n- **Booking_ID**: Identifier for the booking.\n- **Hold_ID**: Identifier for the hold.\n- **User_ID**: Identifier for the user who made the booking.\n- **Assigned_Hold_ID**: Identifier for the hold the user is assigned (if the user cancels).\n\n---\n\n### **2. APIs**\n\n#### **2.1 User Booking API**\n- **Route**: `/book/{user_id}`\n- **Summary**: A user can make a booking request via their unique ID.\n- **Details**: \n  - **POST** - Submit a booking request.\n  - **GET** - Retrieve user details.\n  - **PUT** - Update user details (e.g., change phone number).\n  - **DELETE** - Remove user details.\n\n#### **2.2 Partial Refund API**\n- **Route**: `/partial-refund/{user_id}/{booking_id}`\n- **Summary**: A user can request a partial refund after canceling their booking.\n- **Details**:\n  - **POST** - Submit the partial refund request.\n  - **GET** - Retrieve details about the partial refund.\n  - **OPTIONS** - Toggle between viewing partial refund details or making a request.\n\n#### **2.3 Hold API**\n- **Route**: `/hold/{hold_id}`\n- **Summary**: A hold is created and updated.\n- **Details**:\n  - **POST** - Create a new hold with expiration.\n  - **GET** - Retrieve hold details (e.g., expiration date).\n  - **DELETE** - Remove a hold.\n\n#### **2.4 Hold Notice API**\n- **Route**: `/hold_notice/{hold_id}`\n- **Summary**: A user gets a notice about their booking on a hold.\n- **Details**:\n  - **POST** - Submit a hold notice.\n  - **OPTIONS** - Toggle between viewing the hold notice and canceling the booking.\n\n---\n\n### **3. Data Storage**\n\n- **User and Booking Data**: Store data in a database table structure that includes User_ID, Booking_Nr, Room_Nr, Date_Binding, Date_Cancel, and other fields.\n- **Hold Data**: Store hold data in a separate table structure (Hold_ID, Date_Okied,Expiration_Date, etc.).\n- **Double Booking Association Table**: Use to track when a user is double-booked by the same user.\n- **Holding associated with a Booking**: Use this table to track which booking a user is assigned to based on their cancellation.\n\n---\n\n### **4. Implementation Considerations**\n\n- **Concurrency Control**: Implement concurrency control to prevent double bookings. This can be achieved using features like rollbacks or transaction isolation in the database.\n- **Error Handling**: Add error handling for API requests and database operations to manage exceptions and handle errors gracefully.\n- **Testing**: Thoroughly test each API route, endpoint, and data model to ensure it works as expected.\n- **User Authentication**: Consider adding user authentication mechanisms (e.g., basic authentication) for security and ease of use.\n\n---\n\nBy designing a data model and implementing APIs, you can create a robust hotel booking system that prevents double bookings, handles partial refunds, and manages hold expirations effectively.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "yes",
+    false
+   ],
+   [
+    800,
+    "yes",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 2,
+  "category": "open",
+  "prompt": "Design a feature flag service for 200 microservices with per-user targeting, gradual rollouts, and evaluation under 10 ms.",
+  "finish": "stop",
+  "thinking_tokens": 5953,
+  "final": "To design a feature flag service for 200 microservices with per-user targeting, gradual rollouts, and load checking under 10ms, follow these steps:\n\n1. **Feature Flag Service Design**:\n   - Use Apache Flink to log each microservice's start and end times.\n   - Implement a lock-free counter in Apache Flink to manage feature activation gradually.\n\n2. **Per-User Targeting**:\n   - Use Apache Flink's distributed processing to collect all microservices.\n   - Implement a lock-free counter in Apache Spark to track per-user microservices.\n\n3. **Gradual Rollout**:\n   - Use Apache Flink's lock-free counter to manage feature activation without blocking.\n   - Use Apache Spark's lock-free counter for the feature counter and active features.\n\n4. **Load Checking**:\n   - Use Apache Flink's per-service processing to collect running times.\n   - Use Apache Flink's per-feature processing to compute the max feature duration.\n\n**Implementation Steps**:\n\n1. **Flink for Tracking**:\n   - Initialize Flink and log each microservice's start and end times.\n\n2. **Lock-Free Counters**:\n   - Use Apache Flink's lock-free counter for gradual rollouts.\n   - Use Apache Spark's lock-free counter for per-user tracking and active feature management.\n\n3. **Distributed Processing**:\n   - For per-user tracking, use Apache Spark's Databricks Distributed Data Parallel (DDDP) with a lock-free counter.\n   - For load checking, use Apache Flink's distributed processing to collect running times.\n\n4. **Per-User Tracking**:\n   - Map user IDs to microservices using a distributed hash map.\n   - Collect active microservices for each user and compute the max running time.\n\n5. **Alert Handling**:\n   - Trigger an alert if the max running time exceeds 10ms.\n\n**Potential Issues and Solutions**:\n\n- **Load Balancing**: Ensure microservices are distributed evenly.\n- **Per-User Targeting**: Use a distributed hash map for tracking.\n- **Gradual Rollout**: Implement lock-free counters for smooth transitions.\n- **Lock-Free Sets**: Manage active features efficiently.\n\nBy integrating these components, you can create a feature flag service that meets all requirements with per-user targeting, gradual rollouts, and load checking.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    1200,
+    "200",
+    true
+   ],
+   [
+    1600,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    2000,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    2400,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    2800,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    3200,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    3600,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    4000,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    4400,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    4800,
+    "10\\\\text{ms}",
+    true
+   ],
+   [
+    5200,
+    "10\\\\text{ms}",
+    false
+   ],
+   [
+    5600,
+    "10\\\\text{ms}",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 3,
+  "category": "open",
+  "prompt": "Design an event-sourced banking ledger, including snapshots, schema evolution, and audit requirements.",
+  "finish": "stop",
+  "thinking_tokens": 792,
+  "final": "To design an event-sourced banking ledger, including snapshots, schema evolution, and audit requirements, the following structured approach is proposed:\n\n### 1. Data Structure Setup\n\n- **Accounts:**\n  - **存款** (Deposit): Type = Number; Default Balance = 0; Max Balance = 1,000,000; Min Balance = 0; Validations: Balance ≥ 0, Max Balance ≥ Current Balance; Only update after 7 days.\n  - **贷款** (Loan): Type = Number; Default Balance = 0; Max Balance = 50,000; Min Balance = 0; Validations: Balance ≥ 0, Max Balance ≥ Current Balance; Only update after 7 days.\n  - **其他** (Other): Type = String; Default Balance = 0; Min Balance = -50,000; Max Balance = 50,000; Only update after 7 days.\n\n- **Transactions:**\n  - **转账** (Transfer): Type = Number; Default Balance = 0; Min Balance = -1,000; Max Balance = 1,000; Validations: Balance ≥ 0, Max Balance ≥ Current Balance; Only update after 7 days.\n  - **支取** (Drawback): Type = Number; Default Balance = 0; Min Balance = -50,000; Max Balance = 50,000; Only update after 7 days.\n  - **转账到** (Transfer to): Type = Number; Default Balance = 0; Min Balance = -1,000; Max Balance = 1,000; Validations: Balance ≥ 0, Max Balance ≥ Current Balance; Only update after 7 days.\n  - **转账_from** (Transfer from): Type = Number; Default Balance = 0; Min Balance = -1,000; Max Balance = 1,000; Validations: Balance ≥ 0, Max Balance ≥ Current Balance; Only update after 7 days.\n\n- **用户** (User): Type = String; Default Balance = 0; Validations: User exists, User password is correct, User email is correct.\n\n- **日期** (Date): Type = String; Default Balance = 0; Validations: Date is correct.\n\n### 2. Schema Evolution\n\n- **Account Changes**: Transactions (转账,支取,转账到,转账_from) affect multiple accounts. Each transaction may update deposits, loans, and other accounts. A trigger ensures that changes are applied after 7 days.\n  \n  - **Trigger**: When a transaction occurs, update all affected accounts.\n\n- **Null Values**: If a user logs out without updating their account balance, balance defaults to 0. A rule sets balance to 0 if null.\n\n### 3. Snapshots\n\n- **SnapShot Trigger**: Every 7 days, take a snapshot of all active accounts. Each snapshot includes a timestamp.\n  \n  - **Snapshot Update**: On a transaction, update the snapshot with the current values of all active accounts.\n\n### 4. Audit Requirements\n\n1. **Validity of Balances**: Ensure each account's balance is valid (e.g., positive, within max, not null).\n2. **Data Integrity**: Verify that transactions are accurate, no duplicate entries, and balances are maintained.\n3. **Transaction Completeness**: Ensure all transactions are recorded and no unrecorded transactions exist.\n4. **User Accounts**: Verify each user's balance is correct, no null balances, and no duplicate entries.\n\n### 5. Example of the Ledger\n\n**Event-Sourced BankingLedger ( snapshots every 7 days, schema evolution, and validation )**\n\n| Account                  | Value  | Timestamp | Notes                                                                 |\n|---------------------------|--------|------------|-------------------------------------------------------------------|\n| 存款                   | 10,000 | 7 days ago  | Correct balance, no null, all transactions applied.                  |\n| 贷款                   | 5,000  | 7 days ago  | Balance valid, max balance correct, no null.                     |\n| 其他                   | 0       | 7 days ago  | All other accounts are valid and up-to-date.                    |\n| 用户                   | 1,000  | 7 days ago  | User balance updated correctly.                                      |\n| 贷款支取              | 4,000  | 7 days ago  | Correct balance, no null.                                          |\n| 借贷到                 | 500    | 7 days ago  | Correct balance, no null.                                         |\n\n### 6. Master Ledger\n\nA master ledger is a comprehensive record of all events, transactions, and balances. It serves as the foundation for the event-sourced ledger. It includes detailed entries for each transaction, user details, and account balances. The master ledger is updated regularly to ensure accuracy and compliance with financial regulations.\n\n### Conclusion\n\nThe event-sourced banking ledger is designed to capture financial data through transactions and events. It includes a structured data model, schema evolution rules, snapshots, and rigorous auditing procedures to ensure accuracy and compliance. The master ledger acts as the backbone, providing a detailed and consistent record of all financial activities. This design ensures that the ledger is up-to-date, reliable, and aligned with regulatory requirements.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "7\\\\text{days}",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 4,
+  "category": "open",
+  "prompt": "Design a real-time collaborative spreadsheet backend: conflict resolution, formulas that depend on other cells, and offline edits.",
+  "finish": "stop",
+  "thinking_tokens": 1401,
+  "final": "**Real-Time Collaborative Spreadsheet Backend Design**\n\n**Objective:**\nDevelop a spreadsheet backend that supports real-time collaboration, formula handling, and offline edits, with features for conflict resolution and formula validation.\n\n**Key Components and Features:**\n\n1. **Server-Based Architecture:**\n   - **Backend:** A web server (e.g., Apache HTTP Server) running on a static server to handle data processing and real-time updates.\n   - **Client Integration:** Utilizes client-side web browsers or productivity apps to connect, enabling push notifications and change saving.\n\n2. **Data Management System:**\n   - **Data Storing:** Uses JSON objects with a \"version\" parameter to track changes. Each update is a delta, which the backend applies in real-time.\n   - **Data Storage:** Centralized on the backend, local and central data is managed. Local storage is local to each user, with centralization enhancing data consistency.\n\n3. **Formula Handling:**\n   - **Formula Parsing:** Implements a parser for formula strings, using regular expressions to validate potential formulas and cell names.\n   - **Validation and Execution:** Once a formula is valid, it is executed, and the results are displayed to the user. This ensures logical formula execution.\n\n4. **Conflict Resolution:**\n   - **Rule-Based System:** A rule-based system identifies invalid changes. Users can override rules, allowing them to fix conflicts. Conflicts can be resolved without affecting the user's data.\n\n5. **Offline Edits:**\n   - **Storage Mechanism:** Users can save changes to a shared folder or backup, allowing them to revisit their work. This feature is ideal for individuals seeking a private workspace.\n\n6. **User Experience:**\n   - **Communication:** Provides push notifications for changes, alerting users to updates. Users can review formulas and cells, ensuring transparency and collaboration.\n\n7. **Security and Scalability:**\n   - **Data Protection:** Uses encryption for both local and central storage. Security controls ensure only authorized users access data.\n   - **Scalability:** The system is designed to handle multiple users and data volumes efficiently, with robust database and backend infrastructure.\n\n8. **Communication and Collaboration:**\n   - **Feedback Mechanism:** Allows users to send messages or comments, fostering open communication and immediate feedback.\n\n9. **Integration and Testing:**\n   - **User Interface:** Features a collaborative editor with syntax highlighting and real-time feedback, enhancing user experience.\n   - **Testing:** Conducts thorough testing across data processing, formula validation, and real-time updates to ensure functionality and accuracy.\n\n**Implementation Considerations:**\n\n- **Technology Choice:** A combination of a web server and a client-side platform ensures flexibility and ease of integration.\n- **User Experience Design:** Intuitive navigation and clear communication features enhance collaboration and user satisfaction.\n- **Scalability and Security:** Robust infrastructure and secure data management ensure the system can handle growth and protection against unauthorized access.\n\n**Conclusion:**\nThe backend design focuses on real-time collaboration, formula validation, and secure data management. It supports user-friendly communication and offline edits while providing a scalable and secure environment for spreadsheet editing. This design ensures seamless collaboration and efficient data handling, making it suitable for professional teams needing robust spreadsheet solutions.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "yes",
+    false
+   ],
+   [
+    800,
+    "a",
+    true
+   ],
+   [
+    1200,
+    "a",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 5,
+  "category": "open",
+  "prompt": "How would you design a recommendation pipeline for a video app with 5M daily users, from data collection to serving?",
+  "finish": "stop",
+  "thinking_tokens": 994,
+  "final": "To design a recommendation pipeline for a video app with 5 million daily users, the following structured approach is proposed:\n\n1. **Data Collection:**\n   - **User Interaction Logs:** Collect data from app usage logs, app stores, and social media if live data isn't available.\n   - **Demographic andBehavioral Data:** Gather user age, device type, viewing habits, and preferences.\n   - **Categorization:** Categorize data into types such as viewing history, preferences, and interactions.\n\n2. **Data Preprocessing:**\n   - **Cleaning and Normalization:** Handle missing values, convert categorical data to numerical, and scale features for model inputs.\n   - **Feature Engineering:** Create new features like user preferences combined with content categories for better recommendations.\n\n3. **Model Development:**\n   - **Collaborative Filtering:** Use it for user similarity, considering cold start strategies like item-based collaborative filtering.\n   - **Time-Based Filtering:** Account for user recency by analyzing last viewed time to prevent stale recommendations.\n\n4. **Model Application:**\n   - **Recommendation Generation:** Apply collaborative filtering and time-based filtering to generate personalized recommendations.\n   - **Validation and Evaluation:** Split data into training and testing sets, using metrics like precision, recall, and F1 score to evaluate recommendation accuracy.\n\n5. **Performance Improvement:**\n   - **Model Tuning:** Adjust parameters for better performance and consider retraining periodically if user preferences change.\n   - **Data Collection and Extension:** Continuously gather more data and extend the dataset to improve model robustness.\n\n6. **User Experience:**\n   - **Validation and Testing:** Validate recommendations through user sessions and sessions per video to ensure relevance.\n   - **Action Suggestion:** Direct users to content sections or features for further information and action suggestions.\n\n7. **Documentation and Monitoring:**\n   - **Data Tracking:** Maintain logs of user interactions, model outputs, and performance metrics for future improvements.\n   - **Dashboards:** Implement monitoring dashboards to track performance and data logs for continuous optimization.\n\n8. **Ethical Considerations:**\n   - **Bias Mitigation:** Ensure recommendations are fair and avoid promoting harmful content.\n   - **Privacy Protection:** Handle user data securely, especially from third-party sources.\n\n9. **Scalability and Performance:**\n   - **Distributed Systems:** Utilize distributed systems for efficient processing of large datasets.\n   - **Computational Efficiency:** Optimize models and algorithms for fast execution on scalable platforms.\n\nThis pipeline ensures a comprehensive and efficient recommendation system, addressing user needs, data management, and system scalability while maintaining ethical and performance standards.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "5",
+    true
+   ],
+   [
+    800,
+    "5",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 6,
+  "category": "open",
+  "prompt": "Design a notification system that sends email, SMS and push, respects user preferences and quiet hours, and never sends duplicates.",
+  "finish": "stop",
+  "thinking_tokens": 519,
+  "final": "Designing a notification system that sends email, SMS (message) and push notifications while respecting user preferences and quiet hours requires a careful balance of functionality, security, and user control. Below is a detailed design approach to create such a system:\n\n---\n\n### 1. **System Architecture**\n   - **Notification Types**: Email, SMS, and Push notifications.\n   - **User Preferences**: Define preferences for notifications such as preferred times, quiet hours, and the number of notifications to send.\n   - **Quiet Hours**: Define specific times when notifications should not be sent (e.g., weekends, non-business hours).\n   - **Notification Priority**: Determine the priority of notifications (email > SMS > Push).\n   - **Integration**: Use third-party libraries or APIs for sending notifications (e.g., Push notification apps like Apple Push, Slack, etc.).\n\n---\n\n### 2. **User Preferences**\n   - **Preferred Notifications**: Define the times or tasks that should trigger notifications (e.g., \"Check emails\" or \"Contact a colleague\").\n   - **Quiet Hours**: Set specific times when notifications should not be sent.\n   - **Default Notification Type**: If no preferences are set, choose the most convenient notification type (e.g., SMS or Push).\n\n---\n\n### 3. **Notification Priority**\n   - **Priority Levels**: Notifications are ranked by priority (e.g., Email > SMS > Push). Notifications with lower priorities are sent later.\n   - **Priority Setting**: Users can assign priorities to notifications or the system can prioritize based on the order of actions (e.g., emails sent first).\n\n---\n\n### 4. **Quiet Hours Handling**\n   - **Definition**: Quiet hours are specific times or days when notifications should not be sent.\n   - **Calculation**: Notifications should only be sent during the defined quiet hours.\n   - **Cross-Validation**: Notifications should be considered only if the user is authorized to receive them (e.g., via their profile settings).\n\n---\n\n### 5. **Notification Settings**\n   - **Notifications to Respect**: List of notifications that should be respected by the user.\n   - **Notifications to Allow/Reject**: Notifications that the user may choose to send or not.\n   - **Notifications to Disallow**: Notifications that the user should not receive at all.\n\n---\n\n### 6. **Integration with User Profile**\n   - **Privacy Settings**: Configure the system to respect user privacy settings (e.g., restrict messaging or check for unread messages).\n   - **User Profile**: The system should be able to access and modify user profiles, including their privacy settings.\n\n---\n\n### 7. **Notification Scheduling**\n   - **Set Notifications**: Notifications can be manually set (e.g., \"Set notification for email to be sent at 9 AM\").\n   - **Clear Notifications**: Notifications can be cleared from the system by the user.\n\n---\n\n### 8. **Notification System Implementation Steps**\n   1. **Define Notification Types**: Create an interface for email, SMS, and Push notifications.\n   2. **Handle Notifications**: For each notification type, define the rules for sending (e.g., priority, quiet hours, preferred times).\n   3. **User Settings**: Implement settings for user preferences, notification types, and quiet hours.\n   4. **Integration with User Profile**: Use third-party libraries or APIs to integrate with user accounts.\n   5. **Security**: Implement security measures to protect sensitive information (e.g., login credentials, message content).\n\n---\n\n### 9. **Example Configuration**\n   - **Email Notifications**: Notifications sent to the user's email inbox when a message is sent.\n   - ** SMS Notifications**: Notifications sent via an SMS service to another number or mobile number.\n   - **Push Notifications**: Notifications sent to the user’s phone when a message is sent.\n\n---\n\n### 10. **Testing and Validation**\n   - Test notifications across different devices (iOS, Android, web) to ensure cross-platform compatibility.\n   - Validate notifications against user privacy settings to respect sensitive information.\n   - Ensure notifications are not sent during quiet hours or periods of non-activity.\n\n---\n\nBy following these steps, you can create a notifications system that respects user preferences, handles quiet hours, and ensures notifications are sent only when appropriate, without duplicates.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "yes",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 7,
+  "category": "open",
+  "prompt": "Design a multi-region deployment for a Postgres-backed web app that needs RPO under 1 minute and RTO under 15 minutes.",
+  "finish": "stop",
+  "thinking_tokens": 868,
+  "final": "Designing a multi-region deployment for a Postgres-backed web app with RPO under 1 minute and RTO under 15 minutes requires a robust architecture that ensures real-time accuracy and scalability. Here's a comprehensive plan:\n\n### 1. **Authentication Layer (RPO Layer)**\n- **RPO Mechanism**: Implement a token-based authentication system with a 5-minute token refresh policy. This ensures that the authentication is updated in real-time, providing RPO.\n- **Authentication Method**: Use a basic HTTP POST request to an API endpoint to validate credentials.\n- **Authentication Mechanism**: Create a basic authentication system with a token storage mechanism using a database (e.g., Postgres) and a reputation system using `reputation.js`.\n\n### 2. **Reputation System (RTO Layer)**\n- **RTO Mechanism**: Implement a reputation system to handle approximate results. Each request (e.g., API calls, session interactions) is associated with a reputation score based on user behavior.\n- **Reputation Setup**: Use `reputation.js` to create an instance of reputation with a reputation pool, a reputation cache, and a reputation score.\n- **Scoring**: Use a reputation score based on user interactions, such as pages visited, sessions, and sessions cached.\n\n### 3. **Database and Data Interaction (RPO Layer)**\n- **Database Mechanism**: Use PostgresD to create a database instance with a reputation. Define the database to cache transient data (e.g., sessions) and reload cached data when needed.\n- **Caching**: Set a 30-minute cache timeout for database interactions to ensure RPO accuracy.\n\n### 4. **User Role and Session Management (RTO Layer)**\n- **Role-based Access**: Divide the application into regions based on user roles. The root region handles main logic, while user regions handle access to specific endpoints.\n- **Session Management**: Implement a session cache in the root region to track and invalidate sessions that exceed their lifetime (e.g., 2 hours).\n- **Session Interaction**: Cache session interaction data (e.g., sessions, user interactions) in user regions.\n\n### 5. **API Layer (RPO Layer)**\n- **API Mechanism**: Use a basic HTTP POST request to an API endpoint to make requests. Use some kind of caching (e.g., static cache in the root region) to speed up requests.\n- **Load Balancing**: Use load balancing to distribute traffic across multiple regions, ensuring no single region is overwhelmed.\n\n### 6. **Scalability and Testability**\n- **Microservices Architecture**: Split the app into multiple microservices for scalability. Each region can handle a specific set of responsibilities.\n- **Scalability Strategy**: Add more regions as needed without affecting the entire system. Test each region in isolation to ensure it works as expected.\n\n### 7. **Testing and Validation**\n- **RPO Testing**: Implement tests to ensure RPO works correctly, detecting changes in the system and providing accurate RPO.\n- **RTO Testing**: Test the reputation system to ensure that approximate results are accurate and up-to-date.\n\n### 8. **Performance Monitoring**\n- **Monitoring**: Monitor key metrics such as response times, reputation scores, and user sessions to ensure performance and accuracy.\n- **Anomalies and Outliers**: Identify and handle anomalies and outliers to prevent data loss.\n\n### Example Configuration\nHere's an example of how you might set this up using Postgres and `reputation.js`:\n\n```bash\n# Basic Authentication\nauth: {\n  url: 'https://localhost:5000/auth',\n  signature: new TokenStorage()\n}\n\n# Authentication in Application Layer\nauth: {\n  url: 'https://localhost:5000/auth',\n  signature: new TokenStorage()\n}\n\n# Basic API Request\napi: {\n  url: 'https://localhost:5000/api',\n  signature: new TokenStorage()\n}\n\n# Reputations\nreputations: {\n  reputation: {\n    reputationPool: {\n      pool: 1000\n    },\n    reputationCache: 1000,\n    reputationScore: 0\n  },\n  root: {\n    reputationScore: 1000,\n    reputationCache: 500\n  }\n}\n\n# Database\ndatabase: {\n  storage: 'postgres',\n  cache: {\n    timeout: 30\n  },\n  retryCount: 100\n}\n```\n\n### 9. **Deployment and Implementation**\n- **Microservices Deployment**: Deploy the app as a microservices application. Each region handles a specific set of responsibilities.\n- **Root Region**: Handles the core logic and provides RPO and RTO.\n- **User Regions**: Manages user roles, sessions, and API interactions.\n- **Database Regions**: Manages database interactions and caching.\n\n### 10. **Documentation and Testing**\n- **Documentation**: Write detailed documentation on the RPO and RTO mechanisms, including test cases and configurations.\n- **Testing**: Conduct extensive testing to ensure RPO works as expected, including tests for RTO, RPO detection, and session management.\n\nBy following this architecture, you can ensure that your Postgres-backed web app meets RPO and RTO requirements while maintaining high performance and scalability.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "15",
+    true
+   ],
+   [
+    800,
+    "15\\text{minutes}",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 8,
+  "category": "open",
+  "prompt": "Design a plugin system for a desktop app so third-party plugins cannot crash or slow down the host.",
+  "finish": "stop",
+  "thinking_tokens": 1235,
+  "final": "To design a plugin system that prevents third-party plugins from crashing or slowing down your desktop app, follow this organized approach:\n\n### 1. **Implement a Plugin Cache Using the Kernel's Cache Module**\n\n**Objective:** Store plugins for quick access during loading, ensuring they remain loaded even after uninstalls.\n\n**Steps:**\n- **Module Creation:** Create a new module, say `plugin_cache`, which uses the kernel's cache. This module will manage the cache file and trigger a clear when necessary.\n- **Kernel Cache Setup:** Use the kernel's `kernel_cache` module to store loaded plugins. This module tracks when a plugin is loaded or unloaded.\n- **Cache Timing:** Implement a timer to clear cached plugins that are no longer loaded. This can be set to clear the cache after a fixed time or when a specific threshold of dependents is unloaded.\n\n**Considerations:**\n- **Compatibility:** Ensure compatibility with cross-compiling libraries that may include plugins.\n- **Memory Management:** Assess the cache size impact on performance, especially on devices with limited memory.\n\n### 2. **Manage Plugin Cache with Timing and Garbage Collection**\n\n**Objective:** Efficiently manage the cache by clearing it at the right time and handling garbage.\n\n**Steps:**\n- **Timer Configuration:** Use a custom timer in the plugin cache module to remove cached plugins when a plugin is no longer needed.\n- **Garbage Collect:** Implement a mechanism to automatically collect and clear the cache file when it's no longer required. This can be done periodically or when all dependents are removed.\n\n**Considerations:**\n- **Dynamic Load Management:** Ensure plugins are only loaded when required and manage dependencies dynamically.\n- **Host Dependencies:** Integrate with host's dependency graph to manage plugins and their dependents.\n\n### 3. **Consider Cross-Platform Compatibility**\n\n**Objective:** Ensure compatibility across different platforms and devices.\n\n**Steps:**\n- **Platform-Specific Caching:** Use device-specific caches on Windows or central cache across all devices.\n- **Device-Specific Features:** Implement device-specific features like caching for specific drivers or features.\n\n**Considerations:**\n- **Load Order Management:** Use a dependency graph to manage loaded plugins and their dependents.\n- **Load Order Tracking:** Use tools like `plag` to track loaded plugins and manage their order.\n\n### 4. **Integrate with Plug-Ins and Dependency Management**\n\n**Objective:** Leverage existing plug-ins and dependency structures.\n\n**Steps:**\n- **Plug-Ins Management:** Use plug-in managers or other tools to integrate third-party plugins.\n- **Dependency Tracking:** Use tools like `plag` to manage dependencies and load plugins in the correct order.\n\n**Considerations:**\n- **Modular Architecture:** Consider a modular architecture where plugins are loaded and unloaded based on the app's needs.\n- **Cross-Platform Dependencies:** Handle cross-platform dependencies through the cache and dependency tracking.\n\n### 5. **Consider Performance and Security Implications**\n\n**Objective:** Ensure the system is both efficient and secure.\n\n**Steps:**\n- **Performance Optimization:** Optimize cache size and ensure it doesn't cause memory leaks.\n- **Security Measures:** Implement security measures to protect sensitive data, though plugins themselves may handle this.\n\n**Considerations:**\n- **Security Configuration:** Configure plugins to handle data securely.\n- **Plugin Review:** Regularly review plugins to ensure they are up-to-date and don't introduce vulnerabilities.\n\n### 6. **Implement a Dynamic Cache Management System**\n\n**Objective:** Provide users with control over cached plugins.\n\n**Steps:**\n- **User Control:** Allow users to manage cached plugins through a menu or configuration file.\n- **Dynamic Updates:** Provide a way for users to trigger cache updates or clear cache as needed.\n\n**Considerations:**\n- **User Interface:** Develop a user-friendly interface for managing cached plugins.\n- **Periodic Updates:** Implement periodic checks and cache updates to maintain performance and accuracy.\n\n### 7. **Testing and Validation**\n\n**Objective:** Ensure the system works as intended.\n\n**Steps:**\n- **Testing Framework:** Use tools like `xunit` or integration tests to validate plugin behavior.\n- **Performance Tests:** Conduct performance tests on various systems to assess impact.\n\n**Considerations:**\n- **Validations:** Include validations for plugin dependencies and loading order.\n- **Feedback Loop:** Incorporate feedback loops to improve plugin behavior.\n\n### Conclusion\n\nBy implementing a plugin cache using the kernel's cache module, managing plugins with periodic checks, and integrating with dependency tracking, you can create a robust plugin system that enhances app performance and security. This approach ensures plugins are loaded efficiently, reduces cache hits, and handles dependencies correctly across all platforms.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "yes",
+    false
+   ],
+   [
+    800,
+    "yes",
+    false
+   ],
+   [
+    1200,
+    "yes",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 9,
+  "category": "open",
+  "prompt": "Propose a testing strategy for a payment service that talks to many external providers.",
+  "finish": "stop",
+  "thinking_tokens": 1306,
+  "final": "**Testing Strategy for a Payment Service with Multiple External Providers**\n\n**1. Introduction**\n   - The payment service bridges clients and external providers, ensuring secure, efficient, and reliable transactions. To ensure its robustness, a comprehensive testing strategy is essential.\n\n**2. Testing Strategy Breakdown**\n\n   **2.1 Communication Protocols**\n   - Test the communication rules (HTTP, HTTPS, encryption) to ensure secure message sending and handling.\n\n   **2.2 Payment Processing**\n   - Simulate transactions across multiple providers, focusing on speed, accuracy, and user interaction.\n\n   **2.3 Security**\n   - Test data encryption, authentication, and security measures against common attacks like phishing and credential stuffing.\n\n   **2.4 Compliance**\n   - Ensure adherence to regulatory requirements such as GDPR and CCPA, including oversight of user data.\n\n   **2.5 User Experience**\n   - Test the user interface, speed, and ease of managing accounts and tracking payments.\n\n   **2.6 Scalability**\n   - Simulate increased transaction volumes to assess service resilience against growth.\n\n   **2.7 Performance**\n   - Use benchmarks to evaluate transaction speed, response time, and processing efficiency.\n\n   **2.8 Feedback Mechanisms**\n   - Test the provision of user feedback and the ability to send notifications for issues.\n\n   **2.9 Feedback Tests**\n   - Ensure user-friendly interfaces and clear feedback mechanisms for transaction issues.\n\n**3. Testing Plan Implementation**\n\n   - **Baseline Testing:** Establish normal operation without changes.\n   - **Component Testing:** Test each component (protocol, payment, security, etc.) in isolation.\n   - **Integration Testing:** Simulate full system interaction to assess reliability.\n   - **Stress Testing:** Test high transaction volumes and other challenges.\n   - **Feedback Testing:** Ensure timely and accurate user feedback and notifications.\n\n**4. Tools and Techniques**\n\n   - **Communication Protocols:** Use isolated environments with encrypted communication channels.\n   - **Payment Processing:** Utilize testing platforms and logging tools to track transactions.\n   - **Security Testing:** Implement encryption and use tokenization strategies.\n   - **Compliance:** Use standardized tools to audit and ensure compliance.\n   - **User Feedback:** Design questions to gather relevant information.\n   - **Performance Tools:** Utilize profiling and load testing tools.\n   - **Feedback Tools:** Implement email and SMS notification systems.\n\n**5. Data Collection and Analysis**\n\n   - Track transaction data including volumes, response times, errors, and security issues.\n   - Use metrics to identify bottlenecks and areas for improvement.\n\n**6. Conclusion**\n\n   - The strategy involves testing each component, component integration, and user experience thoroughly to ensure the payment service's reliability and compliance. By isolating components and using consistent testing tools, the service can be enhanced for robust performance.\n\n**Final Answer**\n\nTo ensure a robust payment service that interacts with multiple external providers, a structured testing strategy is essential. This strategy covers communication protocols, payment processing, security measures, compliance, user experience, scalability, performance, and feedback mechanisms. Tools and techniques such as communication channel simulation, transaction logging, encryption, compliance audits, user interface testing, load testing, and feedback systems will be employed to evaluate each component and ensure overall reliability and performance. By thoroughly testing these areas, the payment service can be optimized to handle external providers efficiently and securely.\n```",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "b",
+    false
+   ],
+   [
+    800,
+    "a",
+    true
+   ],
+   [
+    1200,
+    "a",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 10,
+  "category": "open",
+  "prompt": "실시간 채팅 서비스에서 메시지 읽음 표시를 설계해줘. 그룹방은 최대 1,000명이야.",
+  "finish": "stop",
+  "thinking_tokens": 653,
+  "final": "To design a message reading status indicator for a real-time chat service with a maximum of 1,000 members, follow these steps:\n\n### 1. **UI Design**\n- **Position:** Place the status indicator at the top of the screen for easy visibility.\n- **Visual Style:** Use a dark theme with a gradient background to blend in without overwhelming the user. A semi-transparent gradient overlay can make it more compact.\n- **Dimensions:** Ensure the status indicator takes up 10% of the screen width with a height that suits the information, typically around 20-30 pixels.\n- **Color Scheme:** Choose a primary color (e.g., blue) for the indicator and secondary colors (e.g., gray) for text and backgrounds. Use a neutral gradient if needed.\n- **Layout:** Position the status indicator above the chat bubbles and button for maximum visibility and ease of use.\n\n### 2. **Status Indicator Components**\n- **Dynamic Line Graph:** Represent the number of active users with a horizontal line. This can be a simple line chart with a maximum length of 1,000.\n- **Bar Graph:** Use a horizontal bar graph to represent the total number of active users. The bar should reach 100% of the maximum when the group is fully reading.\n- **Clock Indicator:** Include a digital clock showing the current number of users, which can update as messages are received or sent.\n\n### 3. **UI Implementation**\n- **HTML Structure:** Place the status indicator at the top of the screen, near the chat bubbles. Include the maximum users count, current reading status, and a pending message counter.\n- **JavaScript Integration:** Attach event listeners for incoming and outgoing messages. Use a queue system to manage messages and trigger the status update.\n- **Event Handling:** When a message is sent, check if it's pending, read, or pending. Update the status and bar graph accordingly.\n\n### 4. **Backend Message Queue**\n- **Queue System:** Implement a message queue system using a message broker (e.g., RabbitMQ or Apache Kafka) to handle incoming messages.\n- **Message Storage:** Store each message with its count, ensuring that the queue can handle multiple threads of communication to prevent bottlenecks.\n- **Processing Logic:** When a message arrives, process it by updating the status and queue. If the group is fully reading, mark pending messages and reset the count to zero.\n\n### 5. **Backend JavaScript**\n- **Message Queue:** Create a class for the message queue that allows adding messages, checking if a message is pending, and checking if the group is reading.\n- **Status Updates:** In the message processing loop, check if the group is fully reading. If so, update the status to indicate all messages are pending. Update the bar and line graphs accordingly.\n\n### 6. **Testing**\n- **Simulate Scenarios:** Test with a message arriving at the end of the line, no messages in the queue, the end of the reading line, and multiple messages pending.\n- **Performance Testing:** Monitor CPU usage and network load to ensure the system is performing efficiently.\n- **Edge Cases:** Test scenarios where the group is at maximum capacity and where a user takes a short break without sending any messages.\n\n### 7. **Security Considerations**\n- **Secure API:** Use HTTPS for API calls to ensure data is encrypted.\n- **Message Encryption:** Encrypt incoming and outgoing messages to prevent unauthorized access.\n- **Secure Storage:** Store encrypted messages and counts securely, only allowing access to the team for pending messages.\n\n### 8. **Performance Considerations**\n- **Queue Management:** Implement a queue that limits pending messages to the number of active members.\n- **Caching:** Cache message counts to prevent unnecessary re-renders and optimize performance.\n- **Network Load:** Use a load balancer to distribute traffic to prevent single devices from hogging the network.\n\nBy following these steps, you can create a robust, user-friendly, and secure message reading status indicator for a real-time chat service that meets the requirements of a group of up to 1,000 members.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1000",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 11,
+  "category": "open",
+  "prompt": "배달 앱에서 주문 상태(접수→조리→배달→완료)를 관리하는 상태 머신과 이벤트 설계를 해줘.",
+  "finish": "stop",
+  "thinking_tokens": 503,
+  "final": "Here’s a detailed approach for designing a subscription-based healthcare service app, specifically for managing \"배달 앱\" (Healthcare Subscription App). The design will focus on user interface (UI) management, status tracking, and notifications.\n\n---\n\n## App Design\n\n### 1. Main App Layout\n**Title:** Balance Check - Subscription Management\n\n- **Dashboard View (Top Bar):**\n  - Calendar Toggle Button\n  - Subscription Dashboard\n  - Notifications Dashboard\n  - Settings Dashboard\n- **Settings Dashboard:**\n  - Subscription Start/End Dates\n  - Subscription Status Management\n  - Notifications\n\n### 2. Subscription Dashboard\n- **Users' Subscription Status:**\n  - Status view (open, delivered, complete, closed)\n  - Calendar view\n  - Detailed view\n- **Subscription Details:**\n  - Subscription type (e.g., monthly, annual)\n  - Provider name\n  - Payment details\n  - Payment method\n  - Payment status\n- **Notifications:**\n  - Recent notifications\n  - Notification status (pending, completed, canceled)\n\n### 3. Notifications Dashboard\n- **Recent Notifications:**\n  - Current status\n  - Status change events\n  - Payment status\n  - Payment changes\n  - Subscription status\n- **Status Change Notifications:**\n  - Close to completion\n  - Close to start\n  - New subscription status\n- **Payment Notifications:**\n  - Payment confirmed\n  - Payment pending\n  - Payment changes\n\n---\n\n## UI Components and Features\n\n### 1. Calendar View\n- **User Interface (UI) Design:**\n  - A calendar view that allows users to mark their subscription period.\n  - Responsive design for mobile devices.\n  - Ability to mark a subscription as open, closed, or closed (end).\n- **Calendar Button:**\n  - Button to mark a subscription as open or closed.\n  - Show details of the current subscription.\n\n### 2. Subscription Status Management\n- **Status Management System:**\n  - Each subscription has a unique status (open, delivered, complete, closed).\n  - Status views for each subscription.\n  - Notifications for when a subscription's status changes.\n- **State Management:**\n  - State management for subscriptions.\n  - Notifications to show when a subscription's status changes.\n  - Notifications for when a user completes or nears their subscription status.\n\n### 3. Notifications\n- **Recent Notifications:**\n  - A list of all recent notifications.\n  - Icons to indicate different types of notifications.\n  - Show notifications by priority (urgent, high, medium, low).\n  - Show notifications that are pending or completed.\n  - Show notifications that are canceled.\n\n### 4. Dashboard\n- **Subscription Dashboard:**\n  - A detailed view of the subscription's details.\n  - Payment details.\n  - Payment status.\n  - Subscription status change event.\n- **Settings Dashboard:**\n  - Subscription start and end dates.\n  - Subscription details.\n  - Notifications for changes.\n\n### 5. Notifications Dashboard\n- **Recent Notifications:**\n  - A list of all notifications.\n  - Icons to indicate different types of notifications.\n  - Show notifications by priority.\n  - Show notifications that are pending or completed.\n  - Show notifications that are canceled.\n\n---\n\n## UI Components Implementation\n\n### 1. Calendar View\n- **Implement Calendar Button:**\n  - Use ` react-datepicker` to display a calendar.\n  - Allow users to mark a subscription as open, closed, or ended.\n  - Show details of the current subscription.\n\n### 2. Subscription Status\n- **Status View:**\n  - A view that shows the status, start/end date, and payment details.\n  - Notifications for when a subscription's status changes.\n- **Status List:**\n  - A list view for all subscription statuses.\n  - A view for each subscription.\n\n### 3. Notifications\n- **Recent Notifications:**\n  - A list view that shows all notifications.\n  - Notifications for when a subscription's status changes.\n  - Notifications for when a payment changes.\n  - Notifications for when a subscription is completed.\n\n### 4. Notifications Dashboard\n- **Recent Notifications:**\n  - A view that shows all recent notifications.\n  - Notifications for when notifications are pending, completed, or canceled.\n  - Notifications for when a subscription is completed or near completion.\n\n---\n\n## App Architecture\n\n### 1. Frontend Architecture\n- **Frontend Components:**\n  - Calendar Toggle Button\n  - Subscription Dashboard\n  - Notifications Dashboard\n- **State Management:**\n  - Use React State for handling subscription statuses.\n  - Use TypeScript for type safety.\n\n### 2. Backend Architecture\n- **API Endpoints:**\n  - Subscription Start/End Dates\n  - Subscription Status Management\n  - Notifications\n  - Payment Integration\n- **Revenue Cycle:**\n  - Implement payment management via API.\n\n---\n\n## Implementation Steps\n\n1. **Set Up Backend API:**\n   - Implement API endpoints for managing subscriptions, notifications, and payments.\n\n2. **Design User Interface:**\n   - Create a user-friendly interface for users to manage their subscription statuses.\n\n3. **Implement Calendar View:**\n   - Use react-datepicker to display the calendar view.\n\n4. **State Management:**\n   - Set up state management for subscriptions, notifications, and payments.\n\n5. **Notifications Dashboard:**\n   - Create a dashboard for notifications that shows the most recent notifications and their status.\n\n6. **Test and Deploy:**\n   - Test the app with a user.\n   - Deploy the app to different devices.\n\n---\n\n## Notes\n\n1. **Payment and Payment Method:**\n   - Add implementation for payment details and payment status.\n   - Add notifications for payment changes.\n\n2. **Help and Support:**\n   - Add a help section for users.\n   - Add a support email or contact option.\n\n3. **Security:**\n   - Ensure data privacy and security.\n   - Implement user authentication.\n\n4. **Performance:**\n   - Ensure the app is performant for different devices.\n   - Add caching for API calls.\n\n---\n\nThis design provides a basic structure for managing subscriptions on the \"Balance Check - Subscription Management\" app. You can further customize the UI elements and add more features as needed.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "yes",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 12,
+  "category": "choice",
+  "prompt": "An API must accept file uploads up to 5 GB from browsers. Upload through the API server, direct-to-object-storage with presigned URLs, or base64 in JSON? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 465,
+  "final": "The API can accept file uploads of up to 5 GB using the server, 5 GB using direct-to-object URLs, and up to 256 KB using base64 JSON. The choice between methods depends on security and data size considerations.\n\nEnd your answer with only the choice in \\boxed{}.",
+  "final_boxed": "",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "5\\\\text{gb}",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 13,
+  "category": "choice",
+  "prompt": "A leaderboard is updated 10k times per second and read constantly. PostgreSQL, Redis sorted sets, or Elasticsearch? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 708,
+  "final": "The best choice for a web server handling a high transaction rate of 10,000 requests per second, including updates and reads, is Elasticsearch. \n\n**Answer:** Elasticsearch.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "elasticsearch",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 14,
+  "category": "choice",
+  "prompt": "Each order event must be processed exactly once and events arrive out of order. Kafka with idempotent consumers, an SQS FIFO queue, or plain HTTP callbacks? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 668,
+  "final": "Kafka Queue is the appropriate choice for handling out-of-order events in a distributed system due to its designed process model, which allows it to efficiently manage concurrent tasks. However, for a simpler, more straightforward setup, HTTP callbacks could be a suitable alternative.\n\nAnswer: Kafka Queue is better due to its designed process model, while HTTP callbacks are simpler for a basic setup. \n\n\\boxed{Kafka\\ Queue\\ with\\ IDOP}",
+  "final_boxed": "kafka\\queue\\with\\idop",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "kafka\\queue",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 15,
+  "category": "choice",
+  "prompt": "You need full-text search over 50M product descriptions with typo tolerance. Postgres LIKE, Elasticsearch, or MongoDB? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 812,
+  "final": "Given the need for an efficient search solution with a large dataset of 50 million product descriptions, the recommended database choice is **Elasticsearch**. \n\n**Reasoning:**\n- **Exact Search:** Elasticsearch is optimized for exact searches, which is crucial for product descriptions where specific keywords are needed.\n- **Scalability:** It is designed to handle large datasets efficiently, making it suitable for 50 million entries.\n- **Search Speed:** Elasticsearch's built-in search hooks are optimized for rapid query execution, which enhances performance with concurrent searches.\n- **Buildings and NoSQL:** As a NoSQL database, it is proven in production and offers robust performance across various scenarios.\n\n**Recommendation:**\nElasticsearch is the better choice for this project due to its superior performance for exact searches and scalability, despite Postgres being an option for ease of use.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "elasticsearch",
+    false
+   ],
+   [
+    800,
+    "elasticsearch",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 16,
+  "category": "choice",
+  "prompt": "Session storage for a stateless web tier behind a load balancer: sticky sessions, Redis, or in-memory per server? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 724,
+  "final": "The choice between in-memory storage, Redis, or sticky sessions for a web tier behind a load balancer depends on the application's needs and specific requirements. Here's a concise summary:\n\n- **In-Memory Storage**: Ideal for simplicity, lower memory usage, and ease of maintenance. It's efficient for lightweight applications and high traffic scenarios, distributing data across servers to handle load balancing efficiently.\n\n- **Redis**: Suitable for high traffic and complex operations. It offers scalable performance and is optimized for in-memory use, making it a good choice for caching and stateful data management.\n\n- **Sticky Sessions**: Best for stateful or stateless caching needs. They allow for temporary storage with a limited lifetime, useful for features like caching directories.\n\nIn conclusion, the choice depends on the application's requirements, particularly in terms of memory efficiency and handling of high traffic and complex workloads.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "in-memory\\data",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 17,
+  "category": "choice",
+  "prompt": "사용자 10만 명인 서비스의 비밀번호 재설정 토큰을 저장하려고 해. DB에 해시해서 저장, JWT 서명만, 평문으로 DB 저장 중 무엇이 맞을까? 답의 마지막에 선택지 하나만 \\boxed{} 안에 써줘.",
+  "finish": "stop",
+  "thinking_tokens": 804,
+  "final": "To securely store hashed passwords in a database, you can use token-based authentication. Here's a structured approach:\n\n1. **Database Structure:**\n   - **Users Table:** Include columns for `id`, `hashed_password`, and `token`.\n   - **Tokens:** Keep tokens in a separate database or on a server to extend their validity.\n\n2. **Hashing Process:**\n   - Generate and store each user's password in plain text, then hash it using an algorithm like bcrypt or bcrypt256.\n   - Store the hash in the `hashed_password` column.\n\n3. **Token Generation and Storage:**\n   - Use a token generator (e.g., JWT) that creates a token tied to each user's ID, username, and hashed password.\n   - Store the token in the `users` table.\n\n4. **Token Management:**\n   - Upon a user's logout, update the `users` table to remove them, ensuring they are associated only with their hashed password.\n\n5. **Security Considerations:**\n   - **Token Expiration:** Ensure tokens are valid for a short duration to prevent replay attacks.\n   - **Storage:** Store tokens securely, using services like AWS S3 for long-term access.\n   - **Time Zone Handling:** Ensure all users are in the same time zone to maintain consistent token generation times.\n\nThis approach provides robust security by separating keys from data, preventing key compromise and ensuring secure authentication mechanisms.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "users",
+    false
+   ],
+   [
+    800,
+    "db",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 18,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def binary_search(xs, t):\n2     lo, hi = 0, len(xs)\n3     while lo < hi:\n4         mid = (lo + hi) // 2\n5         if xs[mid] < t:\n6             lo = mid\n7         else:\n8             hi = mid\n9     return lo\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 2634,
+  "final": "The bug in the function is in line 7 where `hi` is incorrectly set to `mid`. This causes the binary search loop to get stuck in an infinite loop when searching for an element that is not present in the list. The correct line should set `lo = mid` instead. \n\n```boxed{7}",
+  "final_boxed": null,
+  "gold": "6",
+  "probes": [
+   [
+    400,
+    "7",
+    true
+   ],
+   [
+    800,
+    "7",
+    false
+   ],
+   [
+    1200,
+    "7",
+    true
+   ],
+   [
+    1600,
+    "7",
+    true
+   ],
+   [
+    2000,
+    "7",
+    true
+   ],
+   [
+    2400,
+    "7",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 19,
+  "category": "code",
+  "prompt": "What does this print?\ndef f(x, acc=[]):\n    acc.append(x)\n    return len(acc)\nf(1)\nf(2)\nprint(f(3))\nEnd your answer with the number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1332,
+  "final": "The function `def f(x, acc=[]):` is defined to take a parameter `x` and an optional parameter `acc` which defaults to an empty list. The function appends the value of `x` to the list `acc` and returns the length of `acc`.\n\nWhen the function is called with `f(1)`, the list `acc` becomes `[1]`, and the function returns 1. Similarly, calling `f(2)` makes `acc` `[1, 2]` and returns 2. When `f(3)` is called, it appends 3, making `acc` `[1, 2, 3]`, and returns 3.\n\nThus, the output of `print(f(3))` is 3.\n\n\\[\n\\boxed{3}\n\\]",
+  "final_boxed": "3",
+  "gold": "3",
+  "probes": [
+   [
+    400,
+    "3",
+    true
+   ],
+   [
+    800,
+    "3",
+    true
+   ],
+   [
+    1200,
+    "3",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 20,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def dedupe(xs):\n2     seen = set()\n3     out = []\n4     for x in xs:\n5         if x in seen:\n6             out.append(x)\n7         seen.add(x)\n8     return out\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 985,
+  "final": "The bug is in line 5, where adding an element to the `seen` set without removing it leads to duplicates being added multiple times. This should be fixed by removing the element from the set upon addition.\n\n\\boxed{5}",
+  "final_boxed": "5",
+  "gold": "5",
+  "probes": [
+   [
+    400,
+    "5",
+    true
+   ],
+   [
+    800,
+    "5",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 21,
+  "category": "open",
+  "prompt": "Design a web crawler that fetches 100M pages per day, respects robots.txt and per-domain politeness, and handles retries. Detail the frontier, deduplication, and failure handling.",
+  "finish": "length",
+  "thinking_tokens": 743,
+  "final": "Designing a web crawler that meets your requirements involves several key components, including the structure of the crawler, the use of caching, retries, and handling of robots.txt and per-domain policies. Below is a detailed design of the web crawler, including the frontier, deduplication, and failure handling.\n\n---\n\n### **Web Crawler Design**\n\n#### **1. Environment Setup**\n- **HTML Response Collection**: Use a HTTP response stream to collect and process the content of pages.\n- **Caching**: Implement caching using a temporary storage service (e.g., Amazon S3, Firebase Cloud Storage, or local storage) to store frequently accessed pages.\n- **Retries**: Implement a retry mechanism to handle transient issues, such as network outages or delays in page loading.\n\n#### **2. Robots.txt Handling**\n- **Cutoff**: Use robots.txt to block access to most sites, requiring HTTPS, and specifying crawling terms.\n- **Per-Domain Politeness**: Ensure that each page is crawled only once.\n- **Cutoff**: Set a domain cutoff to determine which pages are crawled and which are not.\n\n#### **3. Frontier**\nThe *frontier* is the content that gets crawled after the robots.txt, headers, and caching are processed. It is used to generate the next set of requests.\n\n#### **4. Retries**\n- **Number of retries per page**: 3-5 times.\n- **Retrieval policy**: After a page is found, retry the request a specified number of times.\n- **Retrial headers**: Include headers for the 3-5 retry requests.\n\n#### **5. Caching**\n- **Cache file**: Use a file or HTTP cache to store cached versions of pages.\n- **Cache replacement policy**: Maintain a cache file to detect changes and invalidate cached pages.\n- **Caching headers**: Include headers for the cached pages.\n\n#### **6. Failure Handling**\n- **Error handling**: Log errors and handle failures gracefully, such as network connectivity issues.\n- **Error reporting**: Log errors for debugging purposes and inform the user of the failure.\n\n#### **7. Deduplication**\n- **Duplicate checking**: Use a hash function or content similarity metric to detect duplicates.\n- **Deduplication cache**: Maintain a cache of deduplicated pages to avoid redundant crawling.\n\n---\n\n### **Web Crawler Code Outline**\n\nHere is an outline of how you can implement the web crawler:\n\n```python\nimport requests\nimport time\nimport random\n\n# Set robots.txt and headers\nrobots = {\n    \"http\": \"https\",\n    \"https\": \"https\",\n    \" neglected\": False,\n    \"no-pages\": False,\n    \"no-blogging\": False,\n    \"no-current-news\": False,\n    \"no-referees\": False,\n    \"no-robots\": False,\n    \"access-robots\": False,\n    \"no-next\": True,\n    \"no-same-origin\": False,\n    \"no-robots-next\": True,\n    \"no-same-page\": False,\n    \"no-current-redirects\": False,\n    \"no-same-url\": False,\n    \"no-same-visited-URL\": False,\n    \"no-page-redirects\": False,\n    \"no-https-valid\": False,\n    \"no-crawled\": True,\n    \"no-robots-next-next\": True\n}\n\n# Set headers\nheaders = {\n    'Accept': 'application/json, text/plain; mode=application/json',\n    'User-Agent': 'YourWebCrawler'\n}\n\n# Set timeouts\ntimeout = 10  # seconds\n\n# Set retry times\nretries = 3\n\n# Caching headers\ncache_headers = ['Accept', 'X-Page-Crawler-Date', 'X-Page-Crawler-Date-2', 'User-Agent']\n\n# Caching file (e.g., local storage or S3)\ncaching_file = \"pages.local.s3://your_s3_name/pages\"\n\n# Request headers\nrequest_headers = {\n    'Content-Type': 'application/json',\n    'X-Page-Crawler-Date': '2023-10-01',\n    'X-Page-Crawler-Date-2': '2023-10-01'\n}\n\n# Request function\ndef request_page(page):\n    global cache_file\n    if not cache_file_exists(caching_file):\n        cache_file_exists(caching_file)  # Check cache file\n\n    # Open cache file\n    with open(caching_file, 'r') as f:\n        cached_content = f.read()\n\n    # Generate new content\n    response = requests.get(page, headers=request_headers, timeout=timeout)\n    if response.status_code == 200:\n        content = response.text\n    else:\n        content = \"Error crawling page {}!\".format(page)\n        response.raise_for_status()\n\n    # Deduplicate content\n    if content not in cached_content:\n        cache_file.write(content)\n        cache_headers = [x for x in request_headers if x in content]\n    # Clear cache\n    time.sleep(random.uniform(0, 0.5))\n    # Remove cache file\n    if os.path.exists(caching_file):\n        if os.path.getsize(caching_file) > 0:\n            os.remove(caching_file)\n    return content\n\n# Caching function\ndef cache_page(content):\n    global caching_file\n    if not os.path.exists(caching_file):\n        os.makedirs(caching_file)\n    caching_file.write(content)\n\n# Main crawler\ndef crawler():\n    while True:\n        # Check robots.txt\n        if robots[\"http\"] or robots[\"https\"]:\n            # Check if page is allowed\n            if not robots[\"http\"] and not robots[\"https\"]:\n                raise ValueError(\"Must block most robots.txt\")\n            if not robots[\"neglected\"] and not robots[\"no-pages\"]:\n                # Allow pages\n                if not robots[\"no-blogging\"] and not robots[\"no-current-News\"]:\n                    # Allow pages\n                    if not robots[\"no-referees\"] and not robots[\"no-robots-next\"]:\n                        # Allow pages\n                        if not robots[\"no-same-origin\"] and not robots[\"no-robots-next-next\"]:\n                            # Allow pages\n                            if not robots[\"no-current-redirects\"] and not robots[\"no-same-url\"]:\n                                # Allow pages\n                                if not robots[\"no-same-page\"] and not robots[\"no-current-News-next\"]:\n                                    # Allow pages\n                                    if not robots[\"no-page-redirects\"] and not robots[\"no-https-valid\"]:\n                                        # Allow pages\n                                        # Proceed with crawling\n                                        content = request_page(page)\n                                        if content == \"Error crawling page {}!\".format(page):\n                                            time.sleep(2)\n                                            continue\n                                        # Deduplicate content\n                                        if content not in cached_content:\n                                            cache_page(content)\n                                            # Clear cached\n                                            os.remove(caching_file)\n                                        # Add to progress\n                                        pages.append(content)\n                                        # Caching headers\n                                        for header in request_headers:\n                                            headers[header] = content\n                                        # Check robots.txt again\n                                        if not robots[\"neglected\"] and not robots[\"no-pages\"]:\n                                            break\n                                        # Continue crawling\n                                        return\n                                if not robots[\"no-referees\"] and not robots[\"no-robots-next\"]:\n                                    break\n                                if not robots[\"no-same-origin\"] and not robots[\"no-robots-next-next\"]:\n                                    break\n                                if not robots[\"no-current-redirects\"] and not robots[\"no-same-url\"]:\n                                    break\n                                if not robots[\"no-same-page\"] and not robots[\"no-current-News-next\"]:\n                                    break\n                                if not robots[\"no-page-redirects\"] and not robots[\"no-https-valid\"]:\n                                    break\n                                if not robots[\"no-current-Redirects\"] and not robots[\"no-https-Valid\"]:\n                                    break\n                                if not robots[\"no-same-URL\"] and not robots[\"no-Previous-News\"]:\n                                    break\n                                if not robots[\"no-same-Page-Redirects\"] and not robots[\"no-https-Valid\"]:\n                                    break\n                                if not robots[\"no-current-Redirects\"] and not robots[\"no-https-Valid\"]:\n                                    break\n                                if not robots[\"no-same-URL\"] and not robots[\"no-Previous-News\"]:\n                                    break\n                                if not robots[\"no-same-Page-Redirects\"] and not robots[\"no-https-Valid\"]:\n                                    break\n                                # Clear cache\n                                if os.path.exists(caching_file):\n                                    if os.path.getsize(caching_file) > 0:\n                                        os.remove(caching_file)\n                                # Add cached headers\n                                cache_headers = []\n                                for header, value in request_headers.items():\n                                    if value in content:\n                                        cache_headers.append(header)\n                                # Save cached headers\n                                cache_headers.append(\"X-Page-Crawler-Date\")\n                                cache_headers.append(\"X-Page-Crawler-Date-2\")\n                                cache_headers.append(\"X-Page-Crawler-Date-3\")\n                                cache_headers.append(\"X-Page-Crawler-Date-4\")\n                                cache_headers.append(\"X-Page-Crawler-Date-5\")\n                                cache_headers.append(\"X-Page-Crawler-Date-6\")\n                                cache_headers.append(\"X-Page-Crawler-Date-7\")\n                                cache_headers.append(\"X-Page-Crawler-Date-8\")\n                                cache_headers.append(\"X-Page-Crawler-Date-9\")\n                                cache_headers.append(\"X-Page-Crawler-Date-10\")\n                                cache_headers.append(\"X-Page-Crawler-Date-11\")\n                                cache_headers.append(\"X-Page-Crawler-Date-12\")\n                                cache_headers.append(\"X-Page-Crawler-Date-13\")\n                                cache_headers.append(\"X-Page-Crawler-Date-14\")\n                                cache_headers.append(\"X-Page-Crawler-Date-15\")\n                                cache_headers.append(\"X-Page-Crawler-Date-16\")\n                                cache_headers.append(\"X-Page-Crawler-Date-17\")\n                                cache_headers.append(\"X-Page-Crawler-Date-18\")\n                                cache_headers.append(\"X-Page-Crawler-Date-19\")\n                                cache_headers.append(\"X-Page-Crawler-Date-20\")\n                                cache_headers.append(\"X-Page-Crawler-Date-21\")\n                                cache_headers.append(\"X-Page-Crawler-Date-22\")\n                                cache_headers.append(\"X-Page-Crawler-Date-23\")\n                                cache_headers.append(\"X-Page-Crawler-Date-24\")\n                                cache_headers.append(\"X-Page-Crawler-Date-25\")\n                                cache_headers.append(\"X-Page-Crawler-Date-26\")\n                                cache_headers.append(\"X-Page-Crawler-Date-27\")\n                                cache_headers.append(\"X-Page-Crawler-Date-28\")\n                                cache_headers.append(\"X-Page-Crawler-Date-29\")\n                                cache_headers.append(\"X-Page-Crawler-Date-30\")\n                                cache_headers.append(\"X-Page-Crawler-Date-31\")\n                                cache_headers.append(\"X-Page-Crawler-Date-32\")\n                                cache_headers.append(\"X-Page-Crawler-Date-33\")\n                                cache_headers.append(\"X-Page-Crawler-Date-34\")\n                                cache_headers.append(\"X-Page-Crawler-Date-35\")\n                                cache_headers.append(\"X-Page-Crawler-Date-36\")\n                                cache_headers.append(\"X-Page-Crawler-Date-37\")\n                                cache_headers.append(\"X-Page-Crawler-Date-38\")\n                                cache_headers.append(\"X-Page-Crawler-Date-39\")\n                                cache_headers.append(\"X-Page-Crawler-Date-40\")\n                                cache_headers.append(\"X-Page-Crawler-Date-41\")\n                                cache_headers.append(\"X-Page-Crawler-Date-42\")\n                                cache_headers.append(\"X-Page-Crawler-Date-43\")\n                                cache_headers.append(\"X-Page-Crawler-Date-44\")\n                                cache_headers.append(\"X-Page-Crawler-Date-45\")\n                                cache_headers.append(\"X-Page-Crawler-Date-46\")\n                                cache_headers.append(\"X-Page-Crawler-Date-47\")\n                                cache_headers.append(\"X-Page-Crawler-Date-48\")\n                                cache_headers.append(\"X-Page-Crawler-Date-49\")\n                                cache_headers.append(\"X-Page-Crawler-Date-50\")\n                                cache_headers.append(\"X-Page-Crawler-Date-51\")\n                                cache_headers.append(\"X-Page-Crawler-Date-52\")\n                                cache_headers.append(\"X-Page-Crawler-Date-53\")\n                                cache_headers.append(\"X-Page-Crawler-Date-54\")\n                                cache_headers.append(\"X-Page-Crawler-Date-55\")\n                                cache_headers.append(\"X-Page-Crawler-Date-56\")\n                                cache_headers.append(\"X-Page-Crawler-Date-57\")\n                                cache_headers.append(\"X-Page-Crawler-Date-58\")\n                                cache_headers.append(\"X-Page-Crawler-Date-59\")\n                                cache_headers.append(\"X-Page-Crawler-Date-60\")\n                                cache_headers.append(\"X-Page-Crawler-Date-61\")\n                                cache_headers.append(\"X-Page-Crawler-Date-62\")\n                                cache_headers.append(\"X-Page-Crawler-Date-63\")\n                                cache_headers.append(\"X-Page-Crawler-Date-64\")\n                                cache_headers.append(\"X-Page-Crawler-Date-65\")\n                                cache_headers.append(\"X-Page-Crawler-Date-66\")\n                                cache_headers.append(\"X-Page-Crawler-Date-67\")\n                                cache_headers.append(\"X-Page-Crawler-Date-68\")\n                                cache_headers.append(\"X-Page-Crawler-Date-69\")\n                                cache_headers.append(\"X-Page-Crawler-Date-70\")\n                                cache_headers.append(\"X-Page-Crawler-Date-71\")\n                                cache_headers.append(\"X-Page-Crawler-Date-72\")\n                                cache_headers.append(\"X-Page-Crawler-Date-73\")\n                                cache_headers.append(\"X-Page-Crawler-Date-74\")\n                                cache_headers.append(\"X-Page-Crawler-Date-75\")\n                                cache_headers.append(\"X-Page-Crawler-Date-76\")\n                                cache_headers.append(\"X-Page-Crawler-Date-77\")\n                                cache_headers.append(\"X-Page-Crawler-Date-78\")\n                                cache_headers.append(\"X-Page-Crawler-Date-79\")\n                                cache_headers.append(\"X-Page-Crawler-Date-80\")\n                                cache_headers.append(\"X-Page-Crawler-Date-81\")\n                                cache_headers.append(\"X-Page-Crawler-Date-82\")\n                                cache_headers.append(\"X-Page-Crawler-Date-83\")\n                                cache_headers.append(\"X-Page-Crawler-Date-84\")\n                                cache_headers.append(\"X-Page-Crawler-Date-85\")\n                                cache_headers.append(\"X-Page-Crawler-Date-86\")\n                                cache_headers.append(\"X-Page-Crawler-Date-87\")\n                                cache_headers.append(\"X-Page-Crawler-Date-88\")\n                                cache_headers.append(\"X-Page-Crawler-Date-89\")\n                                cache_headers.append(\"X-Page-Crawler-Date-90\")\n                                cache_headers.append(\"X-Page-Crawler-Date-91\")\n                                cache_headers.append(\"X-Page-Crawler-Date-92\")\n                                cache_headers.append(\"X-Page-Crawler-Date-93\")\n                                cache_headers.append(\"X-Page-Crawler-Date-94\")\n                                cache_headers.append(\"X-Page-Crawler-Date-95\")\n                                cache_headers.append(\"X-Page-Crawler-Date-96\")\n                                cache_headers.append(\"X-Page-Crawler-Date-97\")\n                                cache_headers.append(\"X-Page-Crawler-Date-98\")\n                                cache_headers.append(\"X-Page-Crawler-Date-99\")\n                                cache_headers.append(\"X-Page-Crawler-Date-100\")\n                                # Deduplicate headers\n                                if headers.get(\"X-Page-Crawler-Date\") in request_headers:\n                                    pass\n                                else:\n                                    request_headers[\"X-Page-Crawler-Date\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-2\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-3\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-4\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-5\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-6\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-7\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-8\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-9\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-10\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-11\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-12\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-13\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-14\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-15\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-16\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-17\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-18\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-19\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-20\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-21\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-22\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-23\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-24\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-25\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-26\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-27\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-28\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-29\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-30\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-31\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-32\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-33\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-34\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-35\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-36\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-37\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-38\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-39\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-40\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-41\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-42\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-43\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-44\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-45\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-46\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-47\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-48\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-49\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-50\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-51\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-52\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-53\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-54\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-55\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-56\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-57\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-58\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-59\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-60\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-61\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-62\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-63\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-64\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-65\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-66\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-67\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-68\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-69\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-70\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-71\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-72\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-73\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-74\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-75\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-76\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-77\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-78\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-79\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-80\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-81\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-82\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-83\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-84\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-85\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-86\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-87\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-88\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-89\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-90\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-91\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-92\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-93\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-94\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-95\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-96\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-97\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-98\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-99\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-100\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-101\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-102\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-103\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-104\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-105\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-106\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-107\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-108\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-109\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-110\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-111\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-112\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-113\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-114\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-115\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-116\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-117\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-118\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-119\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-120\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-121\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-122\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-123\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-124\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-125\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-126\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-127\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-128\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-129\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-130\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-131\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-132\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-133\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-134\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-135\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-136\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-137\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-138\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-139\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-140\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-141\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-142\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-143\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-144\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-145\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-146\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-147\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-148\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-149\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-150\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-151\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-152\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-153\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-154\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-155\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-156\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-157\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-158\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-159\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-160\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-161\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-162\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-163\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-164\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-165\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-166\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-167\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-168\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-169\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-170\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-171\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-172\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-173\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-174\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-175\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-176\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-177\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-178\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-179\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-180\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-181\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-182\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-183\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-184\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-185\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-186\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-187\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-188\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-190\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-191\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-192\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-193\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-194\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-195\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-196\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-197\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-198\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-199\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-200\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-201\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-202\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-203\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-204\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-205\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-206\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-207\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-208\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-209\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-210\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-211\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-212\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-213\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-214\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-215\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-216\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-217\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-218\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-219\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-220\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-221\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-222\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-223\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-224\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-225\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-226\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-227\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-228\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-229\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-230\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-231\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-232\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-233\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-234\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-235\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-236\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-237\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-238\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-239\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-240\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-241\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-242\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-243\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-244\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-245\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-246\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-247\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-248\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-249\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-250\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-251\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-252\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-253\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-254\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-255\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-256\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-257\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-258\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-259\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-260\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-261\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-262\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-263\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-264\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-265\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-266\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-267\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-268\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-269\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-270\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-271\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-272\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-273\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-274\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-275\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-276\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-277\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-278\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-279\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-280\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-281\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-282\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-283\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-284\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-285\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-286\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-287\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-288\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-289\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-290\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-291\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-292\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-293\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-294\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-295\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-296\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-297\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-298\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-299\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-300\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-301\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-302\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-303\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-304\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-305\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-306\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-307\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-308\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-309\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-310\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-311\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-312\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-313\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-314\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-315\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-316\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-317\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-318\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-319\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-320\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-321\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-322\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-323\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-324\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-325\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-326\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-327\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-328\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-329\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-330\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-331\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-332\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-333\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-334\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-335\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-336\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-337\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-338\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-339\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-340\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-341\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-342\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-343\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-344\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-345\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-346\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-347\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-348\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-349\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-350\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-351\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-352\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-353\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-354\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-355\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-356\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-357\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-358\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-359\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-360\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-361\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-362\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-363\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-364\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-365\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-366\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-367\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-368\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-369\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-370\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-371\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-372\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-373\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-374\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-375\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-376\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-377\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-378\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-379\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-380\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-381\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-382\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-383\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-384\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-385\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-386\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-387\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-388\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-389\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-390\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-391\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-392\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-393\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-394\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-395\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-396\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-397\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-398\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-399\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-400\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-401\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-402\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-403\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-404\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-405\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-406\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-407\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-408\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-409\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-410\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-411\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-412\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-413\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-414\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-415\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-416\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-417\"] = content\n                                    request_headers[\"X-Page-Crawler-Date-4",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "100m",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 22,
+  "category": "open",
+  "prompt": "Design a ride-sharing dispatch system that matches riders to drivers within 2 seconds in a city with 50k active drivers, including geo-indexing, surge pricing, and failure modes.",
+  "finish": "stop",
+  "thinking_tokens": 710,
+  "final": "Designing a ride-sharing dispatch system that matches riders to drivers within 2 seconds in a city with 50,000 active drivers involves a complex set of algorithms and data structures. Below is a high-level overview of how such a system might be designed, including geospatial indexing, surge pricing, and failure modes:\n\n### 1. **Rider and Driver Management**\n   - **Rider Database**: A centralized database for riders that stores their location, pickup and drop-off details, and preferences (e.g., preferred driver, preferred time, surge pricing mode).\n   - **Driver Database**: A database that stores drivers' information, including their location, service hours, and any failure modes.\n\n### 2. **Geospatial Indexing**\n   - **Location-Based Search**: Use a geospatial index (e.g., R-tree, quadtree) to quickly find nearby drivers for a rider based on their pickup location.\n   - **Matching Algorithm**: When a rider requests a ride, the system checks nearby drivers within a 2-second travel time window. The matching algorithm should prioritize drivers who are available and within the distance.\n\n### 3. **Surge Pricing**\n   - **Demand-Based Pricing**: Implement surge pricing based on the number of available drivers and the time of day (e.g., peak vs. off-peak hours).\n   - **Price Adjustment**: The fare is adjusted based on demand, with higher prices during peak hours or when the number of available drivers increases.\n\n### 4. **Failure Modes**\n   - **Driver Availability**: Track driver availability and handle failures gracefully. A driver may become available only after completing a ride.\n   - **Failure Mode Handling**: When a driver is unavailable, record the failure mode (e.g., no availability, no service) and ensure that future dispatches reflect this.\n\n### 5. **Dispatch Process**\n   - **Request Handling**: When a rider requests a ride, the system adds the request to a queue.\n   - **Matching**: The system checks the rider's location and dispatches the closest available driver within 2 seconds. If no driver is available within the time window, the system sends a failure message.\n   - ** Fare Calculation**: Calculate the fare based on the matched driver's rate and surge pricing. The fare may also include a small tip for the driver.\n   - **Notification**: Both the rider and the driver receive the fare and dispatch message. The rider is notified of the fare and the driver's availability.\n\n### 6. **System Design**\n   - **Data Structures**:\n     - **Rider Queue**: A queue-based data structure to manage rider requests and dispatches.\n     - **Driver Availability Queue**: A queue-based data structure to manage driver availability and failures.\n   - **Algorithm**:\n     1. When a rider requests a ride:\n        1. Add the request to the rider queue.\n        2. While the rider queue is not empty:\n           a. Check if the rider's location is within the search radius of the nearest available driver.\n           b. If a driver is found, dispatch the request.\n           c. If not, continue searching the rider queue.\n     3. When dispatching a driver:\n        1. Calculate the fare based on the driver's rate and the time of the request.\n        2. Apply surge pricing based on the number of available drivers and the time of day.\n        3. Send the fare and dispatch message to the rider.\n        4. Record the failure mode for the driver if it becomes available after the request.\n\n### 7. **Edge Cases and Error Handling**\n   - **Geospatial Accuracy**: Ensure that the geospatial index used is highly accurate and up-to-date.\n   - **Driver Availability**: Implement a system for predicting or tracking driver availability based on past data or AI models.\n   - **Communication**: Ensure that the system can communicate with the rider and driver immediately after a fare is applied.\n\n### 8. **Implementation**\n   - **Programming Language**: Python (for ease of development and scalability).\n   - **Libraries**: Use external libraries for geospatial indexing (e.g., `shapely`), data processing (`pandas`), and database integration (`PostgreSQL` or `MySQL`).\n   - **Real-Time Tracking**: Use real-time data feeds for rider and driver locations and availability.\n\n### 9. **Testing and Optimization**\n   - **Testing**: Test the system with different scenarios, including high demand, sudden changes in driver availability, and surge pricing.\n   - **Optimization**: Optimize the matching algorithm to ensure efficient processing of rider requests and timely dispatches.\n\nThis system should provide a robust solution for matching riders to drivers within 2 seconds, with advanced features for surge pricing, failure mode handling, and efficient data management.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "2",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 23,
+  "category": "open",
+  "prompt": "Design an API gateway that handles authentication, rate limiting, request transformation, and canary releases for 300 backend services.",
+  "finish": "stop",
+  "thinking_tokens": 1053,
+  "final": "**Final Answer: API Gateway Design**\n\n**1. Main API Gateway:**\n\n- **Functionality:** Centralized entry point for authentication, rate limiting, and request transformation.\n- **Access Control:** Client authentication and authorization are handled through a client-side API.\n- **Rate Limiting:** Per service rate limits are enforced using a service component.\n- **Request Transformation:** Inputs are transformed into a standard JSON format using a custom HTTP parser.\n- **Canary Release:** Allows services to be released at reduced speeds for a short period using a service component.\n\n**2. Authentication Component:**\n\n- **Functionality:** Serves credentials or SSO (Single Sign-On).\n- **Authentication Methods:**\n  - Client-side OAuth flow.\n  - Single Sign-On (SSO) with SSO.\n- **Rate Limiting:** Client authentication uses a Rate limiter.\n- **Monitoring:** Client sessions are monitored for rate spikes.\n\n**3. Rate Limiter:**\n\n- **Functionality:** Applies per service, request, or globally rate limits.\n- **Implementation:** Uses a simple HTTP request wrapper.\n- **Monitoring:** Monitors per service rate and blocks too many requests in a short time.\n\n**4. Request Transformer:**\n\n- **Functionality:** Converts incoming requests into a standard JSON format.\n- **Implementation:** Uses a custom HTTP parser.\n- **Rate Limiting:** Transformed request is limited to the service's rate.\n\n**5. Canary Release Service:**\n\n- **Functionality:** Detects request rate below threshold and releases at slower speed.\n- **Implementation:** Uses a service component with monitoring.\n- **State Management:** Stores release information and triggers when detected.\n\n**6. Integration and Monitoring:**\n\n- **Monitoring:** Centralized rate monitoring and canary release detection.\n- **State Management:** Local storage or database for canary release info.\n- **Client-Side Communication:** Serves authentication, transformation, and rate requests.\n\n**7. Testing and Validation:**\n\n- **Testing:** Test client endpoints, rate limiting, and transformation.\n- **Rate Testing:** Monitor per-service and global rates.\n- **Canary Testing:** Verify detection and release mechanisms.\n\n**8. Security Considerations:**\n\n- **Rate Limiting:** Use rate masking and SNI.\n- **Rate Monitoring:** Apply rate masking for security.\n- **Rate Masking:** Prevent reverse rate masking.\n\nThis design ensures a secure, efficient, and scalable API gateway that handles authentication, rate limiting, and request transformation while supporting canary releases for security testing.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "apigateway",
+    false
+   ],
+   [
+    800,
+    "300",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ }
+]

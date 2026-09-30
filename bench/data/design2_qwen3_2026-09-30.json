@@ -1,0 +1,1155 @@
+[
+ {
+  "i": 0,
+  "category": "open",
+  "prompt": "Design a distributed job scheduler that runs each job exactly once per schedule slot across 3 regions and tolerates a full region outage. Explain the trade-offs.",
+  "finish": "stop",
+  "thinking_tokens": 3821,
+  "final": "To design a **distributed job scheduler** that runs each job **exactly once per schedule slot** across **three regions** and **tolerates a full region outage**, the following approach balances **redundancy**, **fault tolerance**, and **performance**:\n\n---\n\n### **Key Requirements**\n1. **Job Distribution**: Each job must be assigned to exactly one of three regions per schedule slot.\n2. **Single Execution**: Each job runs once per slot, meaning no overlap across regions.\n3. **Fault Tolerance**: The scheduler must tolerate a **full region outage** (i.e., a region becomes completely unavailable).\n4. **Consistency**: Jobs must be executed in the correct region, even if outages occur.\n\n---\n\n### **Design Strategy**\n\n#### **1. Region Assignment with Quorum**\n- **Assign Jobs to Regions**: Each job is assigned to one of the three regions. The scheduler uses a **quorum system** to ensure that at least one region is always available.\n- **Quorum Mechanism**: A region is considered \"available\" if it is not out. If a region becomes out, it loses its quorum, and the scheduler must reassign the job to another region.\n\n#### **2. Dynamic Job Reassignment**\n- **Heartbeat Monitoring**: Each region periodically reports its status (e.g., \"up\" or \"down\"). The scheduler uses this information to detect outages.\n- **Reassignment Logic**:\n  - If a region is out, the scheduler reassigns the job to another region that is still available.\n  - The scheduler ensures that the new region is not out, using a **distributed consensus algorithm** (e.g., Raft, Paxos) to manage region availability.\n\n#### **3. Fault Tolerance via Redundancy**\n- **Replication**: Jobs are replicated across all three regions. If one region fails, the job is still available in the other two.\n- **Load Balancing**: Jobs are distributed across regions to avoid overloading any single region.\n\n#### **4. Scheduler Architecture**\n- **Central Coordinator**: A central component tracks region statuses and job assignments.\n- **Distributed Consensus**: Regions use consensus algorithms to agree on their availability and job assignments.\n- **Dynamic Assignment**: Jobs are assigned to regions based on availability and load, ensuring no region is overloaded.\n\n---\n\n### **Trade-offs**\n\n| **Trade-off** | **Description** |\n|---------------|------------------|\n| **Complexity** | The scheduler requires advanced fault detection, consensus algorithms, and dynamic assignment logic, increasing development complexity. |\n| **Performance** | Reassignment latency may impact job execution time, especially if regions are far apart. |\n| **Resource Usage** | Redundancy increases memory and processing overhead, but ensures fault tolerance. |\n| **Scalability** | The design scales well with more regions, but the quorum system becomes more complex as regions grow. |\n\n---\n\n### **Example Workflow**\n1. **Job Assignment**:\n   - Job A is assigned to Region 1.\n   - Job B is assigned to Region 2.\n   - Job C is assigned to Region 3.\n2. **Outage Detection**:\n   - Region 2 goes down (heartbeat fails).\n3. **Reassignment**:\n   - Scheduler reassigns Job B to Region 1 (if available) or Region 3 (if available).\n4. **Execution**:\n   - Job B runs in Region 1 (if available), ensuring no region is out.\n\n---\n\n### **Conclusion**\nThe scheduler balances **fault tolerance** and **performance** by using a **quorum-based assignment** and **distributed consensus**. It ensures each job runs once per slot across regions, even if a region fails. The trade-offs involve **complexity**, **resource usage**, and **potential latency** in reassignment. This design is suitable for mission-critical systems requiring high availability and reliability.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "3",
+    false
+   ],
+   [
+    800,
+    "3",
+    false
+   ],
+   [
+    1200,
+    "3",
+    false
+   ],
+   [
+    1600,
+    "3",
+    false
+   ],
+   [
+    2000,
+    "3",
+    false
+   ],
+   [
+    2400,
+    "3",
+    false
+   ],
+   [
+    2800,
+    "3",
+    false
+   ],
+   [
+    3200,
+    "3",
+    false
+   ],
+   [
+    3600,
+    "3",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 1,
+  "category": "open",
+  "prompt": "Design the data model and APIs for a hotel booking system that prevents double booking under high concurrency, supports holds that expire after 10 minutes, and handles partial refunds.",
+  "finish": "stop",
+  "thinking_tokens": 3922,
+  "final": "To design a robust hotel booking system that prevents double bookings, manages holds with expiration, and supports partial refunds, the following data model and APIs are proposed:\n\n---\n\n### **Data Model**\n\n#### **Entities & Relationships**\n1. **Hotel**  \n   - `id` (PK)  \n   - `name` (VARCHAR)  \n   - `location` (VARCHAR)  \n   - `contact_info` (VARCHAR)  \n\n2. **Room**  \n   - `id` (PK)  \n   - `hotel_id` (FK)  \n   - `room_number` (VARCHAR)  \n   - `type` (VARCHAR)  \n   - `price` (DECIMAL)  \n   - `availability` (TIMESTAMP)  \n   - `status` (ENUM: \"available\", \"booked\", \"expired\")  \n\n3. **Booking**  \n   - `id` (PK)  \n   - `room_id` (FK)  \n   - `customer_id` (FK)  \n   - `check_in_date` (DATETIME)  \n   - `check_out_date` (DATETIME)  \n   - `status` (ENUM: \"pending\", \"confirmed\", \"partial\")  \n   - `refundable` (BOOLEAN)  \n   - `refund_amount` (DECIMAL)  \n   - `refund_status` (ENUM: \"partial\", \"complete\")  \n   - `created_at` (TIMESTAMP)  \n   - `updated_at` (TIMESTAMP)  \n\n4. **Hold**  \n   - `id` (PK)  \n   - `booking_id` (FK)  \n   - `room_id` (FK)  \n   - `customer_id` (FK)  \n   - `start_time` (DATETIME)  \n   - `end_time` (DATETIME)  \n   - `status` (ENUM: \"active\", \"expired\")  \n\n---\n\n### **Key Constraints**\n- **Unique Constraint on Booking**:  \n  `room_id`, `check_in_date`, `check_out_date` ensures no duplicate bookings for the same room and dates.  \n- **Hold Expiration**:  \n  `end_time` is set to `current_time + 10 minutes` (e.g., `NOW() + INTERVAL 10 MINUTE`).  \n- **Partial Refunds**:  \n  Refunds are calculated based on the portion of the booking completed (e.g., `refund_amount = total_price * (days_passed / total_days)`).\n\n---\n\n### **API Endpoints**\n\n#### **1. Book a Room**\n- **Method**: POST  \n- **Path**: `/book`  \n- **Parameters**:  \n  - `room_id` (INT)  \n  - `check_in_date` (DATETIME)  \n  - `check_out_date` (DATETIME)  \n  - `customer_id` (INT)  \n- **Response**:  \n  - `booking_id` (INT)  \n  - `hold_id` (INT)  \n- **Flow**:  \n  - Check room availability using `/availability`.  \n  - If available, create booking and place a hold with `end_time = NOW() + INTERVAL 10 MINUTE`.  \n  - Set booking status to `\"pending\"` until hold expires.\n\n#### **2. Check Availability**\n- **Method**: GET  \n- **Path**: `/availability`  \n- **Parameters**:  \n  - `room_id` (INT)  \n  - `check_in_date` (DATETIME)  \n  - `check_out_date` (DATETIME)  \n- **Response**:  \n  - `available` (BOOLEAN)  \n  - `reason` (VARCHAR)  \n- **Flow**:  \n  - Query `Room.availability` or `Booking` for availability.\n\n#### **3. Place a Hold**\n- **Method**: POST  \n- **Path**: `/place-hold`  \n- **Parameters**:  \n  - `room_id` (INT)  \n  - `customer_id` (INT)  \n- **Response**:  \n  - `hold_id` (INT)  \n- **Flow**:  \n  - Create a hold with `start_time = NOW()` and `end_time = NOW() + INTERVAL 10 MINUTE`.  \n  - Associate with a booking (via `booking_id`).\n\n#### **4. Expire a Hold**\n- **Method**: PUT  \n- **Path**: `/expire-hold`  \n- **Parameters**:  \n  - `hold_id` (INT)  \n- **Response**:  \n  - `updated_hold` (Hold)  \n- **Flow**:  \n  - Update `hold.status` to `\"expired\"`.  \n  - Release the room for booking confirmation.\n\n#### **5. Refund a Booking**\n- **Method**: POST  \n- **Path**: `/refund`  \n- **Parameters**:  \n  - `booking_id` (INT)  \n  - `refund_amount` (DECIMAL)  \n- **Response**:  \n  - `refund_status` (ENUM: \"partial\", \"complete\")  \n- **Flow**:  \n  - Calculate refund based on `refundable` and `refund_amount`.  \n  - Update `booking.refund_status` and `refund_amount`.\n\n#### **6. Update Booking Status**\n- **Method**: PUT  \n- **Path**: `/update-booking`  \n- **Parameters**:  \n  - `booking_id` (INT)  \n  - `new_status` (ENUM: \"pending\", \"confirmed\", \"partial\")  \n- **Response**:  \n  - `updated_status` (ENUM)  \n- **Flow**:  \n  - Update `booking.status` based on hold expiration or refund status.\n\n---\n\n### **Concurrency & Scalability**\n- **Locking**: Use database-level locks or transactions to prevent double bookings.  \n- **Unique Constraints**:  \n  - `room_id`, `check_in_date`, `check_out_date` in `Booking` to avoid duplicates.  \n- **Hold Management**:  \n  - Holds are stored in a separate table with `end_time` to ensure expiration.  \n- **Partial Refunds**:  \n  - Refunds are processed dynamically based on booking progress.\n\n---\n\n### **Example Use Cases**\n1. **Booking a Room**:  \n   - User requests a room. System checks availability. If available, creates booking and places a hold.  \n   - Hold expires after 10 minutes, allowing booking confirmation.  \n\n2. **Refund Request**:  \n   - User requests a refund. System calculates partial refund based on time elapsed.  \n   - Updates booking status and refund amount.\n\n---\n\nThis design ensures robustness, scalability, and compliance with the requirements, leveraging database constraints, holds, and dynamic refund logic.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "1",
+    false
+   ],
+   [
+    1200,
+    "10",
+    false
+   ],
+   [
+    1600,
+    "10",
+    false
+   ],
+   [
+    2000,
+    "10",
+    false
+   ],
+   [
+    2400,
+    "10",
+    false
+   ],
+   [
+    2800,
+    "10",
+    false
+   ],
+   [
+    3200,
+    "1",
+    false
+   ],
+   [
+    3600,
+    "1",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 2,
+  "category": "open",
+  "prompt": "Design a feature flag service for 200 microservices with per-user targeting, gradual rollouts, and evaluation under 10 ms.",
+  "finish": "stop",
+  "thinking_tokens": 1156,
+  "final": "Designing a feature flag service for 200 microservices with **per-user targeting**, **gradual rollouts**, and **evaluation under 10 ms** requires a robust, scalable, and efficient architecture. Below is a structured approach to achieve these goals:\n\n---\n\n### **Key Components**\n\n1. **User Attribute Store**  \n   - **Purpose**: Track user profiles, attributes, and context (e.g., location, role, device, behavior).  \n   - **Implementation**:  \n     - Use a **key-value store** (e.g., Redis) for fast access to user attributes.  \n     - Store user profiles in a **relational database** (e.g., PostgreSQL) for structured queries.  \n   - **Example**:  \n     ```python\n     # Example: Fetch user attributes\n     user_id = \"12345\"\n     user_attributes = get_user_attributes(user_id)\n     ```\n\n2. **Feature Configuration Store**  \n   - **Purpose**: Manage which features are enabled for which users or groups.  \n   - **Implementation**:  \n     - Use a **distributed key-value store** (e.g., DynamoDB) for scalability.  \n     - Store feature rules (e.g., \"Enable feature A for users in region 2\") in a schema-aware database.  \n   - **Example**:  \n     ```python\n     # Enable feature \"user_segmented\" for users in region 2\n     update_feature_config(\"user_segmented\", {\"regions\": [\"2\"]})\n     ```\n\n3. **Rollout Management**  \n   - **Purpose**: Gradually apply features to subsets of users.  \n   - **Implementation**:  \n     - Use a **rollout scheduler** (e.g., Kubernetes CronJobs or a custom queue) to manage rollout percentages.  \n     - Track rollout progress using a **database** (e.g., PostgreSQL) to monitor which users have been assigned the feature.  \n   - **Example**:  \n     ```python\n     # Track rollout percentage\n     rollout_percentage = get_rollout_percentage(\"user_segmented\")\n     if rollout_percentage < 50:\n         schedule_rollout(\"user_segmented\", 50)\n     ```\n\n4. **Evaluation Module**  \n   - **Purpose**: Monitor feature performance in real-time with low latency.  \n   - **Implementation**:  \n     - Use a **lightweight analytics framework** (e.g., Prometheus + Grafana) for real-time metrics.  \n     - Process metrics in **microseconds** using a **event-driven architecture** (e.g., RabbitMQ or Kafka).  \n   - **Example**:  \n     ```python\n     # Evaluate feature performance\n     evaluate_feature(\"user_segmented\", {\"engagement\": 85, \"errors\": 2})\n     ```\n\n5. **Service Architecture**  \n   - **Purpose**: Handle 200 microservices efficiently.  \n   - **Implementation**:  \n     - Use a **centralized service** (e.g., a microservice with a REST API) to manage flags.  \n     - Leverage **Circuit Breaker** patterns to handle failures and ensure fault tolerance.  \n     - Use **message queues** (e.g., Kafka) for decoupling microservices.  \n   - **Example**:  \n     ```python\n     # Fetch feature flags for a microservice\n     flags = get_flags(\"microservice_id\")\n     ```\n\n---\n\n### **Core Features**\n\n| Feature | Description |\n|--------|-------------|\n| **Per-User Targeting** | Apply features based on user attributes (e.g., role, location). |\n| **Gradual Rollouts** | Introduce features in stages (e.g., 10% → 50% → 100%) with A/B testing. |\n| **Real-Time Evaluation** | Monitor metrics (engagement, errors) under 10 ms using lightweight tools. |\n| **Scalability** | Distribute load across 200 microservices with a centralized service. |\n| **Low Latency** | Use efficient data structures (e.g., Redis) and event-driven architectures. |\n\n---\n\n### **Technical Implementation Details**\n\n- **Database Choice**:  \n  - **Read-Write Split**: Use PostgreSQL for structured data and Redis for fast attribute lookups.  \n  - **Caching**: Cache feature configurations and rollout percentages in Redis for quick access.  \n\n- **Rollout Strategy**:  \n  - **A/B Testing**: Randomly assign users to control (old) or experimental (new) groups.  \n  - **Progress Tracking**: Use a rolling window (e.g., 10,000 users) to calculate rollout percentages.  \n\n- **Evaluation Metrics**:  \n  - **Key Metrics**: Conversion rates, error rates, user engagement, and latency.  \n  - **Real-Time Processing**: Use a lightweight framework like **Prometheus** for instant feedback.  \n\n- **Service Architecture**:  \n  - **Microservice Communication**: Use **gRPC** or **REST APIs** with **Circuit Breaker** (e.g., Hystrix) to handle failures.  \n  - **Event-Driven**: Use **Kafka** to propagate rollout decisions to microservices.  \n\n---\n\n### **Example Workflow**\n\n1. **User Attributes**:  \n   - User ID: `12345`  \n   - Attributes: `region=2, role=admin`  \n\n2. **Feature Configuration**:  \n   - Feature: `user_segmented`  \n   - Rules: `region=2`  \n\n3. **Rollout Management**:  \n   - Schedule rollout for `user_segmented` to 50% of users.  \n\n4. **Evaluation**:  \n   - Monitor metrics: `engagement=85, errors=2`  \n   - If metrics meet target, proceed to production; else, pause rollout.  \n\n---\n\n### **Challenges & Solutions**\n\n- **Scalability**: Use **distributed databases** and **Circuit Breakers** to handle high traffic.  \n- **Latency**: Optimize data retrieval with **Redis** and **event-driven pipelines**.  \n- **Complexity**: Modularize the service with **microservices** and **message queues**.  \n\n---\n\n### **Conclusion**\n\nThis feature flag service balances **scalability**, **dynamic targeting**, and **real-time evaluation** to support 200 microservices. By leveraging efficient databases, event-driven architectures, and lightweight evaluation tools, it ensures gradual rollouts, low latency, and accurate feature performance monitoring.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 3,
+  "category": "open",
+  "prompt": "Design an event-sourced banking ledger, including snapshots, schema evolution, and audit requirements.",
+  "finish": "stop",
+  "thinking_tokens": 3291,
+  "final": "### Event-Sourced Banking Ledger Design\n\nTo design a robust event-sourced banking ledger with snapshots, schema evolution, and audit requirements, the system must integrate three core components: **Event Store**, **Snapshot Store**, and **Audit Trail**. Below is a structured breakdown of the design:\n\n---\n\n### **1. Event Store**\n- **Purpose**: Record all changes to the system state as a sequence of events.\n- **Fields**:\n  - `event_id`: Unique identifier for the event (e.g., UUID).\n  - `timestamp`: Time when the event was recorded.\n  - `participant`: Identifier of the participant (e.g., account number, user ID).\n  - `action`: Type of event (e.g., `DEPOSIT`, `WITHDRAW`, `TRANSFER`).\n  - `payload`: Details of the event (e.g., amount, recipient account, transaction ID).\n- **Structure**: Events are stored in a sequence, linked to the previous event (e.g., a chain of events).\n- **Example**:\n  ```json\n  {\n    \"event_id\": \"12345\",\n    \"timestamp\": \"2023-10-05T14:30:00Z\",\n    \"participant\": \"ACCT123\",\n    \"action\": \"DEPOSIT\",\n    \"payload\": {\"amount\": 500, \"currency\": \"USD\"}\n  }\n  ```\n\n---\n\n### **2. Snapshot Store**\n- **Purpose**: Capture the system state at specific points in time (e.g., hourly or daily).\n- **Fields**:\n  - `snapshot_id`: Unique identifier for the snapshot.\n  - `timestamp`: Time of the snapshot.\n  - `schema_version`: Version of the schema at the time of the snapshot.\n  - `events`: List of events up to this point (filtered to include only those relevant to the snapshot).\n- **Implementation**:\n  - Snapshots are taken periodically (e.g., every 1 hour).\n  - Each snapshot includes the schema version to ensure compatibility with future changes.\n  - Example:\n    ```json\n    {\n      \"snapshot_id\": \"SNAP20231005\",\n      \"timestamp\": \"2023-10-05T14:30:00Z\",\n      \"schema_version\": \"1.0\",\n      \"events\": [\n        {\"event_id\": \"12345\", \"action\": \"DEPOSIT\", \"payload\": {\"amount\": 500}},\n        {\"event_id\": \"12346\", \"action\": \"TRANSFER\", \"payload\": {\"amount\": 200, \"recipient\": \"ACCT678\"}}\n      ]\n    }\n    ```\n\n---\n\n### **3. Audit Trail**\n- **Purpose**: Log all events for traceability and recovery.\n- **Fields**:\n  - `audit_id`: Unique identifier for the audit event.\n  - `timestamp`: Time of the audit event.\n  - `participant`: Identifier of the participant.\n  - `action`: Type of audit event (e.g., \"RECORD_EVENT\").\n  - `payload`: Details of the event (e.g., event data, schema version).\n  - `schema_version`: Schema version at the time of the event.\n- **Structure**: The audit trail is a complete log of all events, enabling point-in-time recovery.\n- **Example**:\n  ```json\n  {\n    \"audit_id\": \"AUD20231005\",\n    \"timestamp\": \"2023-10-05T14:30:00Z\",\n    \"participant\": \"ACCT123\",\n    \"action\": \"RECORD_EVENT\",\n    \"payload\": {\"event_id\": \"12345\", \"action\": \"DEPOSIT\", \"payload\": {\"amount\": 500}},\n    \"schema_version\": \"1.0\"\n  }\n  ```\n\n---\n\n### **4. Schema Evolution**\n- **Purpose**: Allow dynamic schema changes without breaking existing events.\n- **Implementation**:\n  - **Versioned Schema**: Each schema version is tracked in a separate store (e.g., a schema database).\n  - **Event Compatibility**: Events include the schema version, ensuring compatibility with new versions.\n  - **Schema Updates**:\n    - When a new schema version is introduced, the system processes existing events to apply changes (e.g., adding new fields).\n    - Events are filtered to include only those relevant to the current schema version.\n- **Example**:\n  - Original schema: `{\"fields\": [\"account_id\", \"amount\"]}`.\n  - Updated schema: `{\"fields\": [\"account_id\", \"amount\", \"transaction_type\"]}`.\n  - The system processes all events to add `transaction_type` to the payload.\n\n---\n\n### **5. Audit Requirements**\n- **Key Requirements**:\n  1. **Event Consistency**: The audit trail must align with the event store, ensuring no discrepancies.\n  2. **Schema Tracking**: Each audit event includes the schema version at the time of the event, allowing for audit of schema changes.\n  3. **Recoverability**: The audit trail enables reconstructing the system state at any point in time.\n  4. **Queryability**: Audit events can be queried to find:\n    - All events related to a specific participant.\n    - The sequence of events leading to a particular state.\n- **Example Query**:\n  - \"Find all events for account ACCT123 in the last 24 hours.\"\n  - \"Reconstruct the state of the system at 2023-10-05T14:30:00Z.\"\n\n---\n\n### **6. Key Considerations**\n- **Efficiency**: Snapshots are taken periodically to avoid excessive storage. Schema evolution is managed with versioned schemas to minimize impact.\n- **Consistency**: The audit trail and event store must remain in sync. Schema changes are applied incrementally to avoid breaking existing events.\n- **Security**: Audit events are logged with sensitive data (e.g., account numbers) encrypted and access-controlled.\n\n---\n\n### **Summary**\nThe event-sourced banking ledger ensures:\n- **Accuracy**: Events are recorded in sequence, enabling point-in-time recovery.\n- **Flexibility**: Schema evolution allows dynamic changes without breaking existing data.\n- **Traceability**: Audit trails provide full visibility into system operations for compliance and debugging.\n\nThis design balances durability, flexibility, and auditability, making it suitable for enterprise-level banking systems.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ],
+   [
+    1200,
+    "10",
+    false
+   ],
+   [
+    1600,
+    "10",
+    false
+   ],
+   [
+    2000,
+    "10",
+    false
+   ],
+   [
+    2400,
+    "10",
+    false
+   ],
+   [
+    2800,
+    "10",
+    false
+   ],
+   [
+    3200,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 4,
+  "category": "open",
+  "prompt": "Design a real-time collaborative spreadsheet backend: conflict resolution, formulas that depend on other cells, and offline edits.",
+  "finish": "stop",
+  "thinking_tokens": 1361,
+  "final": "Designing a real-time collaborative spreadsheet backend requires addressing three core challenges: **conflict resolution**, **formulas that depend on other cells**, and **offline editing**. Below is a structured approach to implement these features:\n\n---\n\n### **1. Data Structure**\nEach cell in the spreadsheet is represented with the following properties:\n- **Value**: The current value of the cell (e.g., `10`, `=A1+B1`).\n- **Timestamp**: A unique identifier for the version of the cell (e.g., `1557890123`).\n- **Dependencies**: A list of cells that this cell references (e.g., `A1`, `B2`).\n- **Formula**: A string representing a formula (e.g., `=A1+B1`).\n\nThe spreadsheet is represented as a 2D grid or a tree structure for efficient updates.\n\n---\n\n### **2. Conflict Resolution**\nTo resolve conflicts when multiple users edit the same cell:\n- **Timestamp-based Resolution**:  \n  - Use the latest timestamp to determine the valid edit.  \n  - If timestamps are the same, the system prompts the user to resolve the conflict (e.g., choose which edit to apply).  \n  - Example: User A edits cell `A1` at `1557890123`, User B edits the same cell at `1557890123`. The system asks the user to choose.\n\n- **Versioning**:  \n  - Each cell has a version number. If two users edit the same cell with the same version number, the system detects a conflict and resolves it by applying the latest version.\n\n- **Consensus Algorithms**:  \n  - For complex scenarios, use algorithms like Raft or Paxos to ensure consensus. However, these are complex and may not be necessary for a spreadsheet with simple edits.\n\n---\n\n### **3. Formulas That Depend on Other Cells**\n- **Dependency Tracking**:  \n  - Each cell tracks its dependencies (e.g., `A1`, `B2`).  \n  - When a dependency changes, the cell's formula is recalculated.\n\n- **Formula Recalculation**:  \n  - A system must detect changes in dependencies and trigger formula updates.  \n  - Example: If `A1` changes from `10` to `20`, all formulas referencing `A1` (e.g., `=A1+B1`) are recalculated.\n\n- **Caching**:  \n  - Store computed values in a cache to avoid redundant calculations.  \n  - When a dependency changes, update the cache and propagate changes to dependent cells.\n\n---\n\n### **4. Offline Editing**\n- **Local Storage**:  \n  - Allow users to edit the spreadsheet locally using a file (e.g., `local.xlsx`) or a simple in-memory database (e.g., SQLite).  \n  - Store changes in a local database with timestamps.\n\n- **Sync Mechanism**:  \n  - When the user reconnects to the internet, sync the local database with the server.  \n  - Handle conflicts during sync (e.g., apply the latest version or prompt the user to resolve).\n\n---\n\n### **5. Implementation Details**\n#### **Conflict Resolution Logic**\n```python\ndef resolve_conflict(cell1, cell2):\n    if cell1.timestamp > cell2.timestamp:\n        return cell1\n    elif cell2.timestamp > cell1.timestamp:\n        return cell2\n    else:\n        # Prompt user to resolve conflict\n        return prompt_user(resolve_conflict_cell(cell1, cell2))\n```\n\n#### **Formula Recalculation**\n- Use a graph to track dependencies.  \n- When a dependency changes, trigger a recalculation for all dependent cells.  \n- Example:  \n  ```python\n  def recalculate_formulas(cell):\n      for dependency in cell.dependencies:\n          recalculate_formulas(dependency)\n  ```\n\n#### **Offline Editing**\n- Use SQLite for local storage.  \n- Allow users to edit cells in a local database, storing changes with timestamps.  \n- Sync with the server using a simple HTTP POST request when connected.\n\n---\n\n### **6. Sync and Conflict Handling**\n- **Sync Process**:  \n  - When reconnecting, compare local and server states.  \n  - Apply the latest version or resolve conflicts by applying the latest edit.\n\n- **Conflict Resolution During Sync**:  \n  - If conflicts are detected, the system applies the latest version or prompts the user to resolve.\n\n---\n\n### **7. Example Scenario**\n1. **User A** edits `A1` to `10` at timestamp `1557890123`.  \n2. **User B** edits `A1` to `20` at timestamp `1557890123`.  \n3. **Conflict Detected**: Timestamps are the same.  \n4. **Resolution**: User B's edit is applied (timestamp `1557890123` wins).  \n5. **Formula Update**: Cell `B1` (`=A1+B1`) recalculates to `20+15=35`.\n\n---\n\n### **8. Tools and Technologies**\n- **Backend**: Python with Flask/Express for API, PostgreSQL/SQLite for storage.  \n- **Frontend**: React/Vue.js for UI, localStorage for offline editing.  \n- **Conflict Resolution**: Timestamp-based logic.  \n- **Formulas**: Graph-based dependency tracking.  \n- **Sync**: HTTP POST requests with conflict resolution.\n\n---\n\n### **9. Challenges and Considerations**\n- **Performance**: Large spreadsheets may require efficient data structures.  \n- **Complex Formulas**: Handle nested dependencies and dynamic calculations.  \n- **Offline Data Loss**: Ensure local edits are safely stored and synced.\n\n---\n\n### **Conclusion**\nA real-time collaborative spreadsheet backend requires careful management of conflicts, formulas, and offline editing. By using timestamp-based conflict resolution, dependency tracking for formulas, and local storage with sync mechanisms, the system can support real-time collaboration, dynamic calculations, and offline editing. This approach balances simplicity with scalability, ensuring a seamless user experience.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ],
+   [
+    1200,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 5,
+  "category": "open",
+  "prompt": "How would you design a recommendation pipeline for a video app with 5M daily users, from data collection to serving?",
+  "finish": "stop",
+  "thinking_tokens": 1198,
+  "final": "Designing a recommendation pipeline for a video app with 5 million daily users requires a scalable, efficient, and real-time approach. Below is a structured breakdown of the pipeline from data collection to serving, with key components and considerations:\n\n---\n\n### **1. Data Collection**\n**Objective:** Capture user interactions, video metadata, and contextual data to train the recommendation engine.\n\n**Key Data Sources:**\n- **User Interactions:** Clicks, plays, watch time, session duration, scroll depth, video completion rates.\n- **Video Metadata:** Title, description, tags, genres, release date, thumbnails, ratings.\n- **Contextual Data:** Device type, location, time of day, app usage patterns.\n- **Feedback:** Ratings, reviews, watch time, and user preferences.\n\n**Tools/Technologies:**\n- **Analytics Tools:** Mixpanel, Google Analytics, or custom tracking systems.\n- **Event Logging:** Use event-based logging (e.g., Kafka for streaming data) to capture real-time interactions.\n- **Data Ingestion:** Apache Kafka for real-time data streaming, Apache Flume for log aggregation.\n\n---\n\n### **2. Data Processing**\n**Objective:** Clean, normalize, and store data efficiently for analysis and recommendation generation.\n\n**Steps:**\n- **Data Cleaning:** Remove duplicates, handle missing values, and normalize text (e.g., tags, descriptions).\n- **Data Normalization:** Convert categorical data (e.g., genres) into numerical formats (e.g., embeddings).\n- **Storage:** Use distributed databases like **Cassandra** or **MongoDB** for scalability.\n- **Batch Processing:** Store historical data in a **data lake** (e.g., AWS S3, GCP Storage) for later analysis.\n\n**Tools/Technologies:**\n- **Apache Kafka** for real-time data streaming.\n- **Apache Spark** for batch processing and machine learning.\n- **Redis** or **Memcached** for caching intermediate results.\n\n---\n\n### **3. Real-Time Recommendation Generation**\n**Objective:** Generate dynamic, personalized recommendations in real time.\n\n**Components:**\n- **Real-Time Processing:** Use **Apache Flink** or **Apache Spark Streaming** for low-latency processing.\n- **Recommendation Engine:**\n  - **Hybrid Approach:** Combine **collaborative filtering** (user-item interactions) with **content-based filtering** (video features).\n  - **Matrix Factorization:** Use **ALS (Alternating Least Squares)** for collaborative filtering.\n  - **Embeddings:** Train embeddings for videos and users to capture nuanced preferences.\n- **Caching:** Store top recommendations in **Redis** or **Memcached** for quick retrieval.\n\n**Tools/Technologies:**\n- **Apache Kafka** for real-time data ingestion.\n- **Apache Spark** for distributed processing.\n- **TensorFlow/PyTorch** for training embeddings and models.\n\n---\n\n### **4. Serving Recommendations**\n**Objective:** Deliver personalized video recommendations to users with low latency.\n\n**Steps:**\n- **Ranking:** Use a **ranking system** (e.g., top-K recommendations, hybrid rankings) to prioritize videos.\n- **Content Delivery Network (CDN):** Use a CDN like **CloudFront** to deliver videos efficiently.\n- **Caching:** Store frequently accessed recommendations in **Redis** for quick access.\n- **Fallback Mechanisms:** If a video is not found, fallback to popular or trending content.\n\n**Tools/Technologies:**\n- **CDN Services:** AWS CloudFront, GCP Cloud CDN.\n- **Content Delivery:** Use **YouTube API** or **Netflix API** for video delivery.\n- **Distributed Cache:** Redis for quick access to recommendations.\n\n---\n\n### **5. Feedback Loop**\n**Objective:** Continuously improve recommendations based on user interaction data.\n\n**Steps:**\n- **Feedback Collection:** Track metrics like **click-through rate (CTR)**, **watch time**, **completion rate**, and **user satisfaction**.\n- **Model Training:** Use feedback to update recommendation models (e.g., retrain ALS models with new data).\n- **A/B Testing:** Compare different recommendation strategies (e.g., top-K vs. hybrid rankings) to optimize performance.\n\n**Tools/Technologies:**\n- **Apache Spark** for training models with new data.\n- **ML Libraries:** TensorFlow, PyTorch for model training.\n- **A/B Testing Tools:** Google Optimize, AWS A/B Testing.\n\n---\n\n### **6. Infrastructure and Scalability**\n**Key Considerations:**\n- **Horizontal Scaling:** Use microservices (e.g., data collection, processing, recommendation, serving) with auto-scaling.\n- **Distributed Systems:** Leverage **Apache Kafka**, **Cassandra**, **Redis**, and **Spark** for scalability.\n- **Auto-Scaling:** Use cloud services (AWS, GCP) with auto-scaling groups to handle peak loads.\n- **Fault Tolerance:** Implement circuit breakers, retries, and error handling for resilience.\n\n---\n\n### **7. Challenges and Solutions**\n- **Data Volume:** Use streaming architectures (Kafka, Spark) to handle massive data.\n- **Latency:** Optimize real-time processing with lightweight algorithms (e.g., top-K recommendations).\n- **User Churn:** Use **context-aware recommendations** and **personalized profiles** to mitigate churn.\n- **Accuracy:** Continuously refine models with feedback loops and A/B testing.\n\n---\n\n### **Example Workflow**\n1. **Data Collection:** Users interact with the app, generating logs (e.g., clicks, plays).\n2. **Real-Time Processing:** Kafka streams data to Spark, which generates real-time recommendations.\n3. **Recommendation Engine:** Uses ALS and embeddings to suggest videos based on user behavior.\n4. **Serving:** Recommendations are cached in Redis, and videos are delivered via CloudFront.\n5. **Feedback Loop:** User interactions are fed back to Spark, updating models for better accuracy.\n\n---\n\n### **Conclusion**\nThe pipeline balances real-time processing, scalability, and personalization. By leveraging distributed systems, efficient algorithms, and continuous feedback loops, the app can deliver engaging, personalized video recommendations to 5M users while maintaining performance and accuracy.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 6,
+  "category": "open",
+  "prompt": "Design a notification system that sends email, SMS and push, respects user preferences and quiet hours, and never sends duplicates.",
+  "finish": "stop",
+  "thinking_tokens": 3144,
+  "final": "To design a robust notification system that respects user preferences, adheres to quiet hours, and avoids duplicates, we need to structure the system around **user preferences**, **notification scheduling**, **channel-specific delivery**, and **duplicate prevention**. Below is a detailed breakdown of the system components and logic.\n\n---\n\n### **1. User Preferences**\nUsers can configure their notification preferences for each channel (email, SMS, push). These preferences are stored in the database.\n\n**Database Table: `users`**\n```sql\nCREATE TABLE users (\n    user_id INT PRIMARY KEY,\n    email_preference BOOLEAN DEFAULT FALSE,\n    sms_preference BOOLEAN DEFAULT FALSE,\n    push_preference BOOLEAN DEFAULT FALSE,\n    quiet_hours TEXT DEFAULT '08:00 TO 09:00'  -- Example: \"08:00\" to \"09:00\"\n);\n```\n\n**Notes:**\n- `quiet_hours` is a string that can be parsed into a list of time ranges (e.g., \"08:00\" to \"09:00\").\n- Users can set preferences dynamically, and the system respects these preferences.\n\n---\n\n### **2. Notification Scheduling**\nNotifications are scheduled at specific times and checked against the user's preferences and quiet hours.\n\n**Database Table: `notifications`**\n```sql\nCREATE TABLE notifications (\n    notification_id INT PRIMARY KEY,\n    user_id INT,\n    notification_type ENUM('email', 'sms', 'push'),\n    scheduled_time DATETIME,\n    is_sent BOOLEAN DEFAULT FALSE\n);\n```\n\n**Notes:**\n- `scheduled_time` is the time when the notification is intended to be sent.\n- `is_sent` marks whether the notification has already been delivered.\n\n---\n\n### **3. Quiet Hours Handling**\nThe system checks if the current time falls within the user’s quiet hours.\n\n**Logic for Quiet Hours Check:**\n```python\ndef is_in_quiet_hours(current_time, quiet_hours):\n    if not quiet_hours:\n        return False\n    # Parse quiet_hours into a list of time ranges\n    ranges = parse_quiet_hours(quiet_hours)\n    for start, end in ranges:\n        if is_time_between(current_time, start, end):\n            return True\n    return False\n```\n\n**Notes:**\n- `parse_quiet_hours` converts the string \"08:00 TO 09:00\" into a list of time ranges (e.g., [\"08:00\", \"09:00\"]).\n- `is_time_between` checks if the current time is within the specified range.\n\n---\n\n### **4. Duplicate Prevention**\nThe system ensures that a notification is not sent more than once.\n\n**Logic for Duplicate Check:**\n```python\ndef is_duplicate(notification_id):\n    # Check if the notification has already been sent\n    return notifications.is_sent(notification_id)\n```\n\n**Notes:**\n- The `notification_id` is generated when the notification is scheduled.\n- The system marks a notification as sent once it is delivered.\n\n---\n\n### **5. Notification Delivery**\nEach notification type is delivered via its respective service (email, SMS, push).\n\n**Example:**\n```python\ndef send_email(user_id, notification_id):\n    # Logic to send email via email service\n    pass\n\ndef send_sms(user_id, notification_id):\n    # Logic to send SMS via SMS service\n    pass\n\ndef send_push(user_id, notification_id):\n    # Logic to send push notification via push service\n    pass\n```\n\n**Notes:**\n- The system uses separate methods for each channel.\n- The notification is sent only if all conditions (quiet hours and duplication check) are met.\n\n---\n\n### **6. Integration Logic**\nThe system processes notifications in the following order:\n\n1. **Check Quiet Hours:**\n   - If the current time is within the user’s quiet hours, the notification is **not sent**.\n\n2. **Check for Duplicates:**\n   - If the notification has already been sent (via `is_sent`), it is **not sent again**.\n\n3. **Send Notification:**\n   - If conditions are met, the notification is sent via the appropriate channel (email, SMS, or push).\n\n---\n\n### **7. Edge Cases and Considerations**\n- **Preferences:** Users can disable any channel (e.g., no email).\n- **Quiet Hours:** Users can set specific times when they don’t want notifications.\n- **Scheduling:** Notifications are scheduled at specific times, and the system checks the current time against the quiet hours.\n- **Duplicates:** The system uses a `is_sent` flag to prevent re-sending.\n\n---\n\n### **Example Workflow**\n1. A user requests a notification for SMS at 9 AM.\n2. The system checks if the current time is within the user’s quiet hours (e.g., 9 AM is not in quiet hours).\n3. It checks if the notification has already been sent (e.g., no).\n4. It schedules the notification, marks it as sent, and sends the SMS.\n\n---\n\n### **Conclusion**\nThis system ensures:\n- **User preferences** are respected.\n- **Quiet hours** are enforced.\n- **Duplicates** are prevented.\n- Notifications are sent via **email, SMS, and push** as requested.\n\nBy structuring the system around these components, it provides a flexible, scalable, and user-friendly notification solution.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ],
+   [
+    1200,
+    "10",
+    false
+   ],
+   [
+    1600,
+    "10",
+    false
+   ],
+   [
+    2000,
+    "10",
+    false
+   ],
+   [
+    2400,
+    "10",
+    false
+   ],
+   [
+    2800,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 7,
+  "category": "open",
+  "prompt": "Design a multi-region deployment for a Postgres-backed web app that needs RPO under 1 minute and RTO under 15 minutes.",
+  "finish": "stop",
+  "thinking_tokens": 1830,
+  "final": "To design a **multi-region deployment** for a PostgreSQL-backed web app with **RPO < 1 minute** and **RTO < 15 minutes**, the following architecture and strategies are critical:\n\n---\n\n### **1. Architecture Overview**\n- **Primary Region**: Active database with full read/write capabilities.\n- **Secondary Region**: Read-only replica of the primary region, synchronized at **high frequency** (e.g., every 1 minute) to meet RPO < 1 minute.\n- **Disaster Recovery Region**: Optional, for additional redundancy (not required for RPO/RTO).\n\n---\n\n### **2. Key Components**\n\n#### **A. Replication Setup**\n- **Synchronous Replication**: Ensure data is synchronized in real-time (e.g., using `pg_basebackup` or `pg_dump` with replication).\n- **High-Frequency Replication**: Configure the secondary region’s PostgreSQL to replicate **every 1 minute** from the primary.\n  - Example: Use `pg_replication` with `synchronous_commit` and `replication_timeout` set to 1 minute.\n- **Read-Only Replica**: The secondary region’s database is a **read-only replica** to prevent write conflicts.\n\n#### **B. Failover Mechanism**\n- **Load Balancer**: Route traffic to the primary region. If the primary fails, automatically switch to the secondary.\n- **Automated Failover**: Use PostgreSQL’s built-in **failover mechanisms** (e.g., `pg_bouncer` or third-party tools like **pgpool**).\n- **Timeout Handling**: Ensure the secondary region’s database becomes available within **15 minutes** of the primary failure (RTO < 15 minutes).\n\n#### **C. Data Consistency and Recovery**\n- **RPO < 1 minute**: The secondary must catch up with the primary within 1 minute. This requires:\n  - Fast network latency.\n  - Synchronous replication with minimal lag.\n  - Regular checks (e.g., `pg_stat_replication`) to ensure synchronization.\n- **RTO < 15 minutes**: The failover process must be efficient. Use:\n  - **Automated failover scripts** to switch to the secondary region.\n  - **Health checks** on the secondary region’s database to confirm availability.\n\n#### **D. Application Layer**\n- **Connection Pooling**: Configure the application to use the primary region’s database initially.\n- **Fallback Logic**: Implement logic to detect primary region failures and switch to the secondary region’s database.\n- **Monitoring**: Use tools like **Prometheus** or **Grafana** to monitor replication lag and failover status.\n\n---\n\n### **3. Example Implementation**\n\n#### **Step-by-Step Implementation**\n\n1. **Primary Region Setup**\n   - Deploy PostgreSQL with full read/write access.\n   - Configure synchronous replication to the secondary region.\n\n2. **Secondary Region Setup**\n   - Deploy PostgreSQL with read-only access.\n   - Set up replication to the primary region at 1 minute intervals.\n   - Use `pg_basebackup` or `pg_dump` for incremental backups.\n\n3. **Replication Configuration**\n   - In PostgreSQL, configure `synchronous_commit` to ensure data is written to the secondary before committing.\n   - Set `replication_timeout` to 1 minute to enforce strict synchronization.\n\n4. **Failover Configuration**\n   - Use a **load balancer** (e.g., **Nginx** or **HAProxy**) to route traffic to the primary region.\n   - Implement **failover scripts** (e.g., **pgpool** or **pg_auto_failover**) to switch to the secondary region if the primary fails.\n   - Set a **timeout** for the failover process (e.g., 15 minutes) to ensure RTO < 15 minutes.\n\n5. **Monitoring and Alerts**\n   - Monitor replication lag using `pg_stat_replication` or third-party tools.\n   - Set up alerts for replication delays or failover failures.\n\n---\n\n### **4. Critical Considerations**\n\n- **Network Latency**: Ensure low latency between regions to meet RPO < 1 minute.\n- **Replication Lag**: Minimize lag by using high-speed networks and synchronous replication.\n- **Disaster Recovery**: The third region (if added) can handle catastrophic failures, but it’s not required for RPO/RTO.\n- **Application Resilience**: Ensure the application can handle failover without downtime.\n\n---\n\n### **5. Summary**\nThis multi-region deployment ensures:\n- **RPO < 1 minute**: Synchronous replication at 1-minute intervals.\n- **RTO < 15 minutes**: Automated failover with health checks and timeout constraints.\n- **High Availability**: Load balancing and failover mechanisms to maintain service uptime.\n\nBy leveraging PostgreSQL’s replication features and robust failover strategies, the web app achieves the required disaster recovery goals.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1",
+    false
+   ],
+   [
+    800,
+    "1",
+    false
+   ],
+   [
+    1200,
+    "1",
+    false
+   ],
+   [
+    1600,
+    "1",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 8,
+  "category": "open",
+  "prompt": "Design a plugin system for a desktop app so third-party plugins cannot crash or slow down the host.",
+  "finish": "stop",
+  "thinking_tokens": 1638,
+  "final": "Designing a robust plugin system for a desktop application with safeguards against crashes and performance degradation requires a layered approach. Below is a structured solution that balances security, performance, and stability:\n\n---\n\n### **Core Components of the Plugin System**\n\n1. **Plugin Manager**  \n   - **Function**: Handles installation, verification, and lifecycle management of plugins.  \n   - **Features**:\n     - **Verification**: Ensures plugins are signed, encrypted, and compatible with the host.  \n     - **Dependency Checks**: Validates required libraries and dependencies.  \n     - **Plugin Registry**: Maintains a list of available plugins with metadata (e.g., version, author, license).  \n\n2. **Plugin Loader**  \n   - **Function**: Loads plugins into a sandboxed environment.  \n   - **Features**:\n     - **Sandboxing**: Isolates plugins using restricted permissions (e.g., file access, network, CPU).  \n     - **Self-Contained**: Encapsulates plugins in a lightweight container (e.g., a sandboxed process with minimal dependencies).  \n     - **Fallback Mechanism**: Provides a default plugin if the current one fails.  \n\n3. **Plugin Runtime**  \n   - **Function**: Executes plugins with real-time monitoring and control.  \n   - **Features**:\n     - **Resource Monitoring**: Tracks CPU, memory, and disk usage.  \n     - **Throttling**: Limits plugin operations if resource usage exceeds thresholds.  \n     - **Crash Handling**: Logs crashes, restarts the plugin, or switches to a fallback.  \n     - **Performance Profiling**: Identifies slow plugins and suggests optimizations.  \n\n4. **Sandboxed Environment**  \n   - **Function**: Isolates plugins from the host system.  \n   - **Features**:\n     - **Security**: Restricts access to sensitive resources (e.g., files, network, system calls).  \n     - **Isolation**: Prevents plugins from affecting the host app's stability.  \n     - **Permissions**: Uses a sandboxed OS or runtime (e.g., Docker containers, virtual machines) with minimal privileges.  \n\n5. **Resource Monitoring & Throttling**  \n   - **Function**: Ensures plugins do not overwhelm the host.  \n   - **Features**:\n     - **Dynamic Resource Allocation**: Adjusts CPU/memory limits based on plugin activity.  \n     - **Performance Profiling**: Identifies bottlenecks and suggests optimizations.  \n     - **Auto-Throttling**: Terminates or limits plugin operations if resource usage exceeds thresholds.  \n\n6. **Crash Reporter & Recovery**  \n   - **Function**: Handles crashes gracefully.  \n   - **Features**:\n     - **Logging**: Captures crash details (e.g., stack traces, error codes).  \n     - **Recovery**: Restarts the plugin or switches to a fallback.  \n     - **User Notification**: Alerts users of critical issues and provides troubleshooting options.  \n\n---\n\n### **Security Measures**\n\n- **Signing & Verification**:  \n  - Plugins must be signed with digital certificates.  \n  - Checksums and hashes verify integrity.  \n  - Only trusted sources (e.g., official repositories) are allowed.  \n\n- **Permissions Control**:  \n  - Use sandboxed environments with restricted access (e.g., no network access, file system permissions).  \n  - Prevent plugins from modifying system files or accessing sensitive data.  \n\n- **Encryption**:  \n  - Encapsulate plugins in encrypted containers to prevent unauthorized access.  \n\n---\n\n### **Performance & Stability**\n\n- **Resource Monitoring**:  \n  - Track CPU, memory, and disk usage in real time.  \n  - Use lightweight frameworks (e.g., WebAssembly for plugins) to minimize overhead.  \n\n- **Throttling & Limiting**:  \n  - Automatically limit plugin operations (e.g., rendering, network calls) if resource usage exceeds thresholds.  \n  - Implement a priority system for plugins, prioritizing critical functions.  \n\n- **Fallback Mechanisms**:  \n  - Provide a default plugin for failed ones.  \n  - Use a plugin registry to manage fallback options.  \n\n---\n\n### **Implementation Considerations**\n\n- **Sandboxing**:  \n  - Use a sandboxed runtime (e.g., Docker containers, virtual machines) with minimal privileges.  \n  - For lightweight apps, use a sandboxed process with restricted permissions.  \n\n- **Plugin Framework**:  \n  - Design a plugin framework that abstracts system calls, allowing the host app to manage plugins without deep knowledge of their internals.  \n\n- **Monitoring Tools**:  \n  - Integrate tools like `perf` or `top` for resource monitoring.  \n  - Use logging frameworks (e.g., syslog) to track plugin activity.  \n\n---\n\n### **Example Workflow**\n\n1. **Installation**:  \n   - User installs a plugin via the plugin registry.  \n   - Plugin Loader verifies signature and dependencies.  \n\n2. **Execution**:  \n   - Plugin is loaded into a sandboxed environment.  \n   - Runtime monitors resource usage and applies throttling.  \n\n3. **Crash Handling**:  \n   - Crash Reporter logs details.  \n   - Host app restarts the plugin or switches to a fallback.  \n\n4. **Performance Optimization**:  \n   - Runtime identifies slow plugins and suggests optimizations (e.g., code refactoring, resource limits).  \n\n---\n\n### **Conclusion**\n\nThis plugin system ensures third-party plugins are isolated, secure, and performant. By combining sandboxing, resource monitoring, and fallback mechanisms, the host app avoids crashes and performance degradation. Key challenges include efficient sandboxing and dynamic resource allocation, which are addressed through lightweight frameworks and real-time monitoring. The design balances security, performance, and user experience, making it suitable for desktop applications requiring reliable plugin ecosystems.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ],
+   [
+    1200,
+    "10",
+    false
+   ],
+   [
+    1600,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 9,
+  "category": "open",
+  "prompt": "Propose a testing strategy for a payment service that talks to many external providers.",
+  "finish": "stop",
+  "thinking_tokens": 876,
+  "final": "### Testing Strategy for a Payment Service Interacting with Multiple External Providers\n\nA robust testing strategy is essential to ensure the reliability, security, and performance of a payment service that interacts with numerous external providers. Below is a structured approach to cover all critical testing areas:\n\n---\n\n### **1. Test Environment Setup**\n- **Isolated Staging Environment**: \n  - Create a staging environment that mirrors the production setup, including:\n    - Real or mock external provider APIs.\n    - Sensitive data (e.g., payment tokens, user credentials) masked for testing.\n    - Configuration files and environment variables.\n- **Version Control**: \n  - Use versioned environments (e.g., `dev`, `staging`, `prod`) to manage changes and avoid accidental production disruptions.\n\n---\n\n### **2. Integration Testing**\n- **Objective**: Validate seamless interaction with external providers.\n- **Tests to Conduct**:\n  - **API Endpoints**: Test all endpoints (e.g., `POST /payments`, `GET /providers`) for correctness.\n  - **Authentication**: Verify token validation, OAuth2, or API keys handling.\n  - **Data Formats**: Ensure compatibility with JSON, XML, or other formats.\n  - **Error Handling**: Test retries, fallback mechanisms, and error codes (e.g., 400, 500).\n  - **Provider-Specific Scenarios**: Simulate interactions with each provider (e.g., Stripe, PayPal, PayU).\n\n---\n\n### **3. Security Testing**\n- **Objective**: Protect sensitive data and ensure compliance with regulations.\n- **Tests to Conduct**:\n  - **Encryption**: Verify end-to-end encryption (e.g., TLS) between the service and providers.\n  - **Data Protection**: Test tokenization, anonymization, and secure storage of user data.\n  - **Compliance**: Check adherence to PCI DSS, GDPR, or other relevant standards.\n  - **Vulnerability Scanning**: Use tools like OWASP ZAP or NIST SP 800-171 to detect vulnerabilities.\n  - **Penetration Testing**: Simulate attacks (e.g., SQL injection, XSS) to identify security flaws.\n\n---\n\n### **4. Performance Testing**\n- **Objective**: Ensure scalability and reliability under load.\n- **Tests to Conduct**:\n  - **Load Testing**: Simulate high traffic (e.g., 10,000+ transactions) using tools like JMeter or LoadRunner.\n  - **Latency Testing**: Measure response time for critical paths (e.g., payment processing).\n  - **Concurrency Testing**: Test multiple simultaneous transactions to identify bottlenecks.\n  - **Resource Utilization**: Monitor CPU, memory, and network usage during stress tests.\n\n---\n\n### **5. Compliance Testing**\n- **Objective**: Ensure adherence to legal and industry standards.\n- **Tests to Conduct**:\n  - **Regulatory Checks**: Validate that the service meets PCI DSS, GDPR, or other regulations.\n  - **Audit Trail Testing**: Verify logging and tracking of transactions for compliance.\n  - **Data Retention**: Test how data is stored and deleted according to regulations.\n\n---\n\n### **6. Regression Testing**\n- **Objective**: Ensure new changes do not break existing functionality.\n- **Tests to Conduct**:\n  - **Smoke Testing**: Validate core features (e.g., payment processing, transaction history) after updates.\n  - **Regression Scenarios**: Re-run critical tests to confirm stability.\n  - **Versioning**: Test compatibility with different API versions or provider updates.\n\n---\n\n### **7. Fault Tolerance Testing**\n- **Objective**: Ensure system resilience in failure scenarios.\n- **Tests to Conduct**:\n  - **Provider Failures**: Simulate provider outages or errors and test fallback mechanisms.\n  - **Timeouts**: Verify the system handles delays or timeouts gracefully.\n  - **Redundancy**: Test failover mechanisms (e.g., load balancing, duplicate processing).\n\n---\n\n### **8. Error Handling and Recovery**\n- **Objective**: Ensure the system responds predictably to errors.\n- **Tests to Conduct**:\n  - **Error Logging**: Test logging of transactions and errors for debugging.\n  - **User Feedback**: Simulate user experiences with errors (e.g., \"Payment failed\" messages).\n  - **Recovery Mechanisms**: Test automatic retries, manual interventions, or fallback processes.\n\n---\n\n### **9. User Acceptance Testing (UAT)**\n- **Objective**: Validate against real user scenarios.\n- **Tests to Conduct**:\n  - **Real User Scenarios**: Simulate transactions with real users or mock users.\n  - **Edge Cases**: Test edge cases like:\n    - Multiple providers involved in a single transaction.\n    - Large volumes of transactions.\n    - Time-sensitive payments (e.g., deadlines).\n  - **Usability Testing**: Ensure the UI/UX is intuitive for users.\n\n---\n\n### **10. Continuous Integration/Continuous Deployment (CI/CD) Testing**\n- **Objective**: Automate testing to ensure quality in CI/CD pipelines.\n- **Tests to Conduct**:\n  - **Automated Tests**: Use tools like Jenkins, GitLab CI, or GitHub Actions to run tests on code changes.\n  - **Test Coverage**: Ensure all critical paths are covered in automated tests.\n  - **Monitoring**: Integrate monitoring tools (e.g., Prometheus, Grafana) to track test results and performance metrics.\n\n---\n\n### **11. Localization and Regional Testing**\n- **Objective**: Ensure compliance with regional regulations and user expectations.\n- **Tests to Conduct**:\n  - **Currency and Locale Handling**: Test payment processing for different currencies and locales.\n  - **Regional Compliance**: Validate adherence to local laws (e.g., VAT, data protection).\n\n---\n\n### **12. Documentation and Logging**\n- **Objective**: Enable traceability and troubleshooting.\n- **Tests to Conduct**:\n  - **Logging**: Ensure logs capture critical events (e.g., transaction IDs, errors).\n  - **Documentation**: Maintain detailed test reports and failure logs for audit purposes.\n\n---\n\n### **Tools and Technologies**\n- **Testing Tools**: JMeter, Postman, Selenium, OWASP ZAP, Prometheus, Grafana.\n- **CI/CD Platforms**: Jenkins, GitLab CI, GitHub Actions.\n- **Security Tools**: OWASP ZAP, NIST SP 800-171, Vulnerability Scanning APIs.\n\n---\n\n### **Conclusion**\nThis strategy ensures the payment service is reliable, secure, and scalable, even when interacting with multiple external providers. By covering integration, security, performance, compliance, and user scenarios, the service can maintain high quality and meet regulatory requirements. Regular testing, automation, and continuous improvement are key to success.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 10,
+  "category": "open",
+  "prompt": "실시간 채팅 서비스에서 메시지 읽음 표시를 설계해줘. 그룹방은 최대 1,000명이야.",
+  "finish": "stop",
+  "thinking_tokens": 1435,
+  "final": "실시간 채팅 서비스에서 **메시지 읽음 표시**를 설계하기 위해 다음과 같은 구조를 고려할 수 있습니다. **최대 1,000명의 그룹 방**에서 사용할 수 있도록 **효율적이고 사용자 경험을 최적화**한 방식을 제안합니다.\n\n---\n\n### 🔍 **1. 메시지 읽음 표시의 기능 목록**\n- **메시지가 읽혀졌는지 확인**  \n- **최근 읽은 시간 기록**  \n- **사용자별 읽음 상태 추적**  \n- **사용자에게 읽음 표시를 알림**  \n- **그룹 방 전체 읽음 상태 공유**  \n\n---\n\n### 🧩 **2. 기술적 설계**\n\n#### 🌐 **1. 메시지 상태 저장**\n- **메시지 상태(Read Status)**:  \n  - `read` (읽음) / `unread` (읽지 않음)  \n  - `last_read_time` (읽음 시점)  \n  - `last_read_user` (읽음한 사용자)  \n\n**데이터베이스 설계 예:**\n```sql\nCREATE TABLE messages (\n    id INT PRIMARY KEY,\n    content TEXT,\n    sender_id INT,\n    receiver_id INT,\n    created_at TIMESTAMP,\n    read_status ENUM('read', 'unread'),\n    last_read_time TIMESTAMP\n);\n```\n\n#### 📱 **2. 사용자별 읽음 상태 추적**\n- **사용자별 읽음 상태 저장**:  \n  - `user_read_status` 테이블 (사용자 ID, 메시지 ID, 읽음 상태)  \n  - 예:  \n    ```sql\n    CREATE TABLE user_read_status (\n        user_id INT,\n        message_id INT,\n        read_status ENUM('read', 'unread'),\n        PRIMARY KEY (user_id, message_id)\n    );\n    ```\n\n#### 📢 **3. 읽음 표시 표시**\n- **메시지에 \"읽음 표시\" 추가**:  \n  - 메시지에 `read` 상태가 표시되며, 사용자가 읽음 시점 기록  \n  - **사용자에게 알림**:  \n    - \"이 메시지는 최근에 읽었습니다.\"  \n    - **표시 색상**: 초록색 (읽음), 빨강색 (읽지 않음)  \n\n#### 🔄 **4. 실시간 읽음 상태 공유**\n- **그룹 방 전체 읽음 상태 추적**:  \n  - 사용자들이 읽음 상태를 공유하여, **최근 읽은 사용자**를 표시  \n  - **사용자별 읽음 상태 업데이트**:  \n    - 읽음 상태가 변경되면, 해당 사용자의 메시지에 **표시**  \n    - 예: 사용자가 읽음 시점이 최근이라면, 메시지에 \"최근 읽음\" 표시  \n\n---\n\n### 📱 **3. 사용자 경험 설계**\n\n#### 📢 **1. 메시지 읽음 표시 표시**\n- **메시지에 \"읽음 표시\" 추가**:  \n  - 메시지에 초록색 기호(예: 📌) 또는 \"읽음\" 텍스트 표시  \n- **사용자에게 알림**:  \n  - \"이 메시지는 최근에 읽었습니다.\"  \n  - **표시 색상**: 초록색 (읽음), 빨강색 (읽지 않음)  \n\n#### 🔄 **2. 그룹 방 전체 읽음 상태 공유**\n- **사용자별 읽음 상태 추적**:  \n  - 사용자가 읽음 상태를 공유하여, 그룹 방 전체에서 **최근 읽은 사용자** 표시  \n  - **사용자별 읽음 상태 업데이트**:  \n    - 읽음 상태가 변경되면, 해당 사용자의 메시지에 **표시**  \n    - 예: 사용자가 읽음 시점이 최근이라면, 메시지에 \"최근 읽음\" 표시  \n\n---\n\n### 🧠 **4. 성능 최적화**\n\n- **메시지 상태 저장**:  \n  - `last_read_time` 기반 읽음 상태 추적 (1,000명 사용자 대비 효율적)  \n- **사용자별 읽음 상태 추적**:  \n  - `user_read_status` 테이블을 사용하여, 읽음 상태를 실시간으로 추적  \n- **사용자 경험 향상**:  \n  - **표시 색상**과 **알림 텍스트**를 사용하여 사용자에게 명확한 정보 제공  \n\n---\n\n### 🧩 **5. 예시 UI/UX**\n\n- **메시지 표시**:  \n  - 메시지에 **초록색 기호** 또는 **\"읽음\" 텍스트** 표시  \n  - **사용자별 읽음 상태**:  \n    - 사용자가 읽음 상태를 공유하면, 그룹 방 전체에서 **\"최근 읽음\" 표시**  \n\n- **사용자 알림**:  \n  - \"이 메시지는 최근에 읽었습니다.\"  \n  - **표시 색상**: 초록색  \n\n---\n\n### 📌 **결론**\n- **메시지 읽음 표시**는 사용자 경험 향상과 성능 최적화를 위해 **실시간 상태 추적**과 **사용자별 읽음 상태 공유**를 통해 설계  \n- **데이터베이스 설계**와 **사용자 경험**을 고려하여, 효율적이고 명확한 표시 제공  \n\n이 설계는 **그룹 방 최대 1,000명**의 사용자 대응을 위한 **실시간 채팅 서비스**의 핵심 기능으로 적합합니다.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1000",
+    false
+   ],
+   [
+    800,
+    "1000",
+    false
+   ],
+   [
+    1200,
+    "1000",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 11,
+  "category": "open",
+  "prompt": "배달 앱에서 주문 상태(접수→조리→배달→완료)를 관리하는 상태 머신과 이벤트 설계를 해줘.",
+  "finish": "stop",
+  "thinking_tokens": 2115,
+  "final": "### 배달 앱 주문 상태 머신 설계\n\n#### 1. **상태 (States)**\n- **접수 (Reception)**\n- **조리 (Preparation)**\n- **배달 (Delivery)**\n- **완료 (Completion)**\n\n#### 2. **이벤트 (Events)**\n- **Order Placed** (주문 플레이스)\n- **Order Received** (주문 수신)\n- **Order Prepared** (조리 시작)\n- **Delivery Confirmed** (배달 확인)\n- **Order Completed** (완료)\n\n#### 3. **상태 간 전이 (Transitions)**\n- **Reception**  \n  - **Order Placed** → Reception  \n  - **Order Received** → Preparation  \n- **Preparation**  \n  - **Order Prepared** → Delivery  \n  - **Order Completed** → Completion  \n- **Delivery**  \n  - **Delivery Confirmed** → Completion  \n- **Completion**  \n  - **Order Completed** → Completion (종료 상태)\n\n#### 4. **설명**\n- **접수 상태**: 주문이 플레이스되었을 때 시작.  \n- **조리 상태**: 주문이 준비되었을 때 시작.  \n- **배달 상태**: 배달이 확인되었을 때 상태 전이.  \n- **완료 상태**: 주문이 완료되었을 때 종료.\n\n#### 5. **예시 전이 흐름**\n1. **Order Placed** → Reception  \n2. **Order Received** → Preparation  \n3. **Order Prepared** → Delivery  \n4. **Delivery Confirmed** → Completion  \n5. **Order Completed** → Completion\n\n#### 6. **이벤트 처리**\n- **Order Placed**: 상태 전이 시작.  \n- **Order Received**: Reception → Preparation 전이.  \n- **Order Prepared**: Preparation → Delivery 전이.  \n- **Delivery Confirmed**: Delivery → Completion 전이.  \n- **Order Completed**: Completion 상태 유지 (종료).\n\n#### 7. **오류 처리**\n- **Order Not Prepared**: 예상치 못한 오류 발생 시 처리 필요.  \n- **Delivery Failed**: 배달 실패 시 상태 전이 중단.\n\n---\n\n### 최종 상태 머신 흐름\n```\nReception\n│\nOrder Placed → Reception\n│\nOrder Received → Preparation\n│\n│\nPreparation\n│   └─ Order Prepared → Delivery\n│\n│\n│\nDelivery\n│   └─ Delivery Confirmed → Completion\n│\n│\n│\nCompletion\n│   └─ Order Completed → Completion (종료)\n```\n\n이 설계는 주문 상태를 명확히 관리하며, 이벤트 기반 전이를 통해 상태 전이를 유도합니다. 최종 상태는 \"완료\"로, 모든 전이가 완료되면 프로세스가 종료됩니다.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "completion",
+    false
+   ],
+   [
+    800,
+    "completion",
+    false
+   ],
+   [
+    1200,
+    "completion",
+    false
+   ],
+   [
+    1600,
+    "completion",
+    false
+   ],
+   [
+    2000,
+    "completion",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 12,
+  "category": "choice",
+  "prompt": "An API must accept file uploads up to 5 GB from browsers. Upload through the API server, direct-to-object-storage with presigned URLs, or base64 in JSON? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 611,
+  "final": "To determine the most suitable method for uploading files up to 5 GB, we analyze the three options:\n\n1. **API Server Upload**: This approach involves the API itself handling the file upload. While it can technically accept large files, it depends on the API's design and capacity. If the API is not optimized for large files, it may struggle with performance and could be limited by server-side constraints. This method is not ideal for handling very large files efficiently.\n\n2. **Direct-to-Object-Storage with Presigned URLs**: This method allows the client to upload the file directly to the storage system, using a presigned URL that provides temporary access. This approach is highly efficient for large files because it avoids the need for the API server to handle the upload process. It is also more scalable and flexible, as it allows the client to manage the upload directly. This is the most suitable option for handling files up to 5 GB.\n\n3. **Base64 in JSON**: This method involves encoding the file into a base64 string and storing it in JSON. While it is simple to implement, it significantly increases the file size (by about 33%) and is inefficient for large files. Additionally, it is not practical for storing large binary data in a JSON format, as it would be cumbersome and inefficient.\n\n---\n\n**Conclusion**: The most efficient and appropriate method for uploading files up to 5 GB is **direct-to-object-storage with presigned URLs**, as it allows the client to handle the upload without relying on the API server, and it is well-suited for large file transfers.\n\n$$\n\\boxed{\\text{direct-to-object-storage with presigned URLs}}\n$$",
+  "final_boxed": "\\text{direct-to-object-storagewithpresignedurls}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "2",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 13,
+  "category": "choice",
+  "prompt": "A leaderboard is updated 10k times per second and read constantly. PostgreSQL, Redis sorted sets, or Elasticsearch? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 503,
+  "final": "To determine the most suitable database for a leaderboard that is updated 10,000 times per second and read constantly, we must evaluate the performance, scalability, and features of the three options: **PostgreSQL**, **Redis sorted sets**, and **Elasticsearch**.\n\n---\n\n### **PostgreSQL**\n- **Strengths**: Strong relational capabilities, ACID compliance, and robust query support.\n- **Limitations**: PostgreSQL is a disk-based system, which means it has slower write throughput compared to in-memory systems. It is not optimized for high-throughput, low-latency operations like 10,000 updates per second.\n- **Conclusion**: While PostgreSQL is excellent for complex queries and transactions, it is **not optimal** for high-performance, high-frequency updates like this one.\n\n---\n\n### **Redis Sorted Sets**\n- **Strengths**: In-memory data store, extremely fast write and read operations, and built specifically for high-performance scenarios.\n- **Features**: Redis sorted sets allow efficient insertion, deletion, and range queries (e.g., getting the top 10 elements). These operations are nearly instant, making them ideal for high-frequency updates.\n- **Conclusion**: Redis sorted sets are **perfect** for this use case. They provide the required speed and scalability to handle 10,000 updates per second, and they are optimized for real-time leaderboard operations.\n\n---\n\n### **Elasticsearch**\n- **Strengths**: Excellent for full-text search and real-time data indexing.\n- **Limitations**: Not optimized for high-write throughput. It is better suited for querying and indexing large volumes of data rather than maintaining a constantly updated leaderboard.\n- **Conclusion**: Elasticsearch is **not the best fit** for this specific use case. It is more suited for search and indexing rather than high-performance, real-time updates.\n\n---\n\n### **Final Recommendation**\nRedis sorted sets are the most appropriate choice due to their speed, scalability, and ability to handle high-frequency updates efficiently.\n\n$$\n\\boxed{\\text{Redis sorted sets}}\n$$",
+  "final_boxed": "\\text{redissortedsets}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "redis\\sorted\\sets",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 14,
+  "category": "choice",
+  "prompt": "Each order event must be processed exactly once and events arrive out of order. Kafka with idempotent consumers, an SQS FIFO queue, or plain HTTP callbacks? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 2167,
+  "final": "To address the scenario, we need to process **each order event exactly once**, even though the events arrive **out of order**. The key requirements are:\n\n1. **Exactly one processing per event**.\n2. **Events arrive out of order**.\n3. **Scalability and reliability** are important.\n\n---\n\n### Evaluation of Options:\n\n#### 1. **Kafka with Idempotent Consumers**\n- **Pros**:\n  - Kafka is well-suited for high-throughput, high-volume scenarios.\n  - Idempotent consumers ensure that even if an event is processed twice, it’s treated as a single occurrence.\n  - Consumers can track processed events using a unique identifier (e.g., message ID or timestamp).\n- **Cons**:\n  - Requires careful configuration to ensure idempotency.\n  - The consumer must track which events have been processed.\n  - Not as straightforward as a dedicated queue service for this exact requirement.\n\n#### 2. **SQS FIFO Queue**\n- **Pros**:\n  - Ensures **message order** (FIFO behavior).\n  - Automatically **handles duplicates** using message IDs.\n  - Simple to implement for this use case.\n  - Designed specifically for scenarios where messages arrive out of order but must be processed exactly once.\n- **Cons**:\n  - Requires the application to handle the **duplicates** (e.g., by checking message IDs).\n  - Not as scalable as Kafka for very high throughput.\n\n#### 3. **Plain HTTP Callbacks**\n- **Pros**:\n  - Simple to implement.\n  - No need for a queue.\n- **Cons**:\n  - **No guaranteed order**.\n  - **No built-in duplicate detection**.\n  - **Not suitable for high-throughput scenarios**.\n  - Requires complex state management to ensure events are processed exactly once.\n\n---\n\n### Conclusion:\n\nAmong the options, **SQS FIFO Queue** is the most appropriate for the given requirements:\n\n- It ensures **message order** (even though events arrive out of order).\n- It **handles duplicates automatically** using message IDs.\n- It is **designed for this exact use case** and is **simple to implement**.\n\nThus, the **best choice** is:\n\n$$\n\\boxed{\\text{SQS FIFO Queue}}\n$$",
+  "final_boxed": "\\text{sqsfifoqueue}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "sqsfifoqueue",
+    true
+   ],
+   [
+    800,
+    "sqsfifoqueue",
+    true
+   ],
+   [
+    1200,
+    "sqsfifoqueue",
+    true
+   ],
+   [
+    1600,
+    "sqsfifoqueue",
+    true
+   ],
+   [
+    2000,
+    "sqsfifo",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 15,
+  "category": "choice",
+  "prompt": "You need full-text search over 50M product descriptions with typo tolerance. Postgres LIKE, Elasticsearch, or MongoDB? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 405,
+  "final": "Elasticsearch is the best choice for full-text search over 50 million product descriptions with typo tolerance due to its advanced features like fuzzy search, stemming, and tokenization, which effectively handle typos. PostgreSQL's full-text search is robust but less optimized for such scenarios. MongoDB's full-text search lacks the necessary features for efficient typo tolerance.\n\n\\boxed{Elasticsearch}",
+  "final_boxed": "elasticsearch",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "elasticsearch",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 16,
+  "category": "choice",
+  "prompt": "Session storage for a stateless web tier behind a load balancer: sticky sessions, Redis, or in-memory per server? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1168,
+  "final": "When dealing with a stateless web tier behind a load balancer, the choice of session storage strategy is critical for maintaining user session persistence across server changes. Let's evaluate the three options:\n\n1. **Sticky Sessions**: This approach relies on a cookie that stores the session ID and is used to route requests to the same server. However, if the load balancer moves the user to a different server, the cookie will no longer be valid, leading to session loss. This makes sticky sessions unreliable in a dynamic load balancing environment.\n\n2. **Redis**: Redis is a high-performance in-memory data store often used for session management. It allows for efficient session storage and retrieval. A key advantage is that the load balancer can route requests to the correct server based on the session ID, even if the session is stored across multiple servers. This is achieved by using a cookie to store the session ID, which the load balancer can use to forward the request to the correct server. Redis also supports session persistence and can handle high traffic volumes, making it a strong candidate for a stateless web tier.\n\n3. **In-Memory Per Server**: This approach stores session data on a per-server basis. While this allows the load balancer to route requests to the correct server based on the session ID, it requires that the session ID be stored in a way that the load balancer can access it. This is typically done via a cookie, but it introduces complexity in ensuring that the load balancer can correctly route requests based on the session ID. It is less reliable than Redis in a dynamic load balancing scenario.\n\nGiven these considerations, **Redis** is the most suitable choice for a stateless web tier behind a load balancer. It provides efficient session management, allows the load balancer to route requests based on the session ID, and supports high performance and scalability.\n\n$$\n\\boxed{Redis}\n$$",
+  "final_boxed": "redis",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "redis",
+    true
+   ],
+   [
+    800,
+    "redis",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 17,
+  "category": "choice",
+  "prompt": "사용자 10만 명인 서비스의 비밀번호 재설정 토큰을 저장하려고 해. DB에 해시해서 저장, JWT 서명만, 평문으로 DB 저장 중 무엇이 맞을까? 답의 마지막에 선택지 하나만 \\boxed{} 안에 써줘.",
+  "finish": "length",
+  "thinking_tokens": 12001,
+  "final": "",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "d",
+    true
+   ],
+   [
+    800,
+    "a",
+    false
+   ],
+   [
+    1200,
+    "a",
+    false
+   ],
+   [
+    1600,
+    "a",
+    true
+   ],
+   [
+    2000,
+    "a",
+    true
+   ],
+   [
+    2400,
+    "a",
+    true
+   ],
+   [
+    2800,
+    "a",
+    true
+   ],
+   [
+    3200,
+    "a",
+    true
+   ],
+   [
+    3600,
+    "a",
+    true
+   ],
+   [
+    4000,
+    "a",
+    true
+   ],
+   [
+    4400,
+    "a",
+    true
+   ],
+   [
+    4800,
+    "a",
+    true
+   ],
+   [
+    5200,
+    "a",
+    true
+   ],
+   [
+    5600,
+    "a",
+    true
+   ],
+   [
+    6000,
+    "a",
+    true
+   ],
+   [
+    6400,
+    "a",
+    true
+   ],
+   [
+    6800,
+    "a",
+    true
+   ],
+   [
+    7200,
+    "a",
+    true
+   ],
+   [
+    7600,
+    "a",
+    true
+   ],
+   [
+    8000,
+    "a",
+    true
+   ],
+   [
+    8400,
+    "a",
+    true
+   ],
+   [
+    8800,
+    "a",
+    true
+   ],
+   [
+    9200,
+    "a",
+    true
+   ],
+   [
+    9600,
+    "a",
+    true
+   ],
+   [
+    10000,
+    "a",
+    true
+   ],
+   [
+    10400,
+    "a",
+    true
+   ],
+   [
+    10800,
+    "a",
+    true
+   ],
+   [
+    11200,
+    "a",
+    true
+   ],
+   [
+    11600,
+    "a",
+    false
+   ],
+   [
+    12000,
+    "a",
+    true
+   ]
+  ],
+  "auto_stop": [
+   7200,
+   "a",
+   "converged"
+  ],
+  "auto_answer": "\\boxed{A}",
+  "auto_boxed": "a"
+ },
+ {
+  "i": 18,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def binary_search(xs, t):\n2     lo, hi = 0, len(xs)\n3     while lo < hi:\n4         mid = (lo + hi) // 2\n5         if xs[mid] < t:\n6             lo = mid\n7         else:\n8             hi = mid\n9     return lo\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 4349,
+  "final": "To identify the bug in the given binary search function, let's first understand the structure of the code and its behavior.\n\n---\n\n### Function Overview\n\nThe function `binary_search(xs, t)` performs a binary search on a list `xs` for a target value `t`. It uses the following logic:\n\n- It initializes `lo = 0` and `hi = len(xs)`.\n- It enters a loop while `lo < hi`, and in each iteration:\n  - It computes `mid = (lo + hi) // 2`.\n  - If `xs[mid] < t`, it updates `lo = mid`.\n  - If `xs[mid] >= t`, it updates `hi = mid`.\n- It returns `lo`.\n\n---\n\n### Key Observations\n\nThe critical issue lies in the handling of the case when `xs[mid] == t`. In the code:\n\n```python\nif xs[mid] < t:\n    lo = mid\nelse:\n    hi = mid\n```\n\nWhen `xs[mid] == t`, the code sets `hi = mid`. This is **incorrect** in the context of a standard binary search algorithm.\n\n---\n\n### Why This Causes a Bug\n\nIn the standard binary search algorithm, when the target is **found** at `xs[mid]`, the correct behavior is to **return `mid`**. However, in the given code, the algorithm continues to adjust `lo` or `hi` in a way that leads to an **infinite loop** when the target is present.\n\nLet’s walk through an example:\n\n#### Example: `xs = [1, 3, 5]`, `t = 3`\n\n- Initial: `lo = 0`, `hi = 3`, `mid = 1` → `xs[1] == t`, so `hi = 1`\n- Now: `lo = 0`, `hi = 1`, `mid = 0` → `xs[0] < t`, so `lo = 0`\n- Loop continues indefinitely, as `lo` and `hi` remain 0 and 1, and the loop condition `lo < hi` is still true.\n\nThis results in an **infinite loop** when the target is present, which is a **bug**.\n\n---\n\n### Conclusion\n\nThe bug is in the **line where `hi` is set to `mid` when `xs[mid] >= t`**, because this causes the algorithm to **loop indefinitely** when the target is present. The correct behavior would be to **return `mid`** when `xs[mid] == t`, not to continue adjusting `hi`.\n\n---\n\n### Final Answer\n\nThe line number with the bug is:\n\n$$\n\\boxed{8}\n$$",
+  "final_boxed": "8",
+  "gold": "6",
+  "probes": [
+   [
+    400,
+    "9",
+    true
+   ],
+   [
+    800,
+    "9",
+    true
+   ],
+   [
+    1200,
+    "9",
+    true
+   ],
+   [
+    1600,
+    "9",
+    true
+   ],
+   [
+    2000,
+    "8",
+    false
+   ],
+   [
+    2400,
+    "8",
+    true
+   ],
+   [
+    2800,
+    "8",
+    true
+   ],
+   [
+    3200,
+    "8",
+    true
+   ],
+   [
+    3600,
+    "8",
+    true
+   ],
+   [
+    4000,
+    "8",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 19,
+  "category": "code",
+  "prompt": "What does this print?\ndef f(x, acc=[]):\n    acc.append(x)\n    return len(acc)\nf(1)\nf(2)\nprint(f(3))\nEnd your answer with the number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1586,
+  "final": "To determine what the code prints, let's break down the function and the sequence of calls step by step.\n\n---\n\n### Function Definition\n\n```python\ndef f(x, acc=[]):\n    acc.append(x)\n    return len(acc)\n```\n\n- `acc` is a list that is **initialized as an empty list** if not provided.\n- The function appends `x` to `acc` and returns the length of `acc`.\n\n---\n\n### Sequence of Calls\n\n```python\nf(1)\nf(2)\nprint(f(3))\n```\n\nLet’s evaluate each call:\n\n#### 1. `f(1)`\n\n- `acc` is initially empty.\n- Append `1` → `acc = [1]`\n- Return `len(acc) = 1`\n\n#### 2. `f(2)`\n\n- `acc` is still `[1]` (from the previous call).\n- Append `2` → `acc = [1, 2]`\n- Return `len(acc) = 2`\n\n#### 3. `print(f(3))`\n\n- `acc` is still `[1, 2]` (from the previous call).\n- Append `3` → `acc = [1, 2, 3]`\n- Return `len(acc) = 3`\n\n---\n\n### Final Output\n\nThe function returns `3` when called with `f(3)`. Therefore, the print statement outputs:\n\n```\n3\n```\n\n---\n\n### Final Answer\n\n$$\n\\boxed{3}\n$$",
+  "final_boxed": "3",
+  "gold": "3",
+  "probes": [
+   [
+    400,
+    "1",
+    true
+   ],
+   [
+    800,
+    "3",
+    true
+   ],
+   [
+    1200,
+    "3",
+    true
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 20,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def dedupe(xs):\n2     seen = set()\n3     out = []\n4     for x in xs:\n5         if x in seen:\n6             out.append(x)\n7         seen.add(x)\n8     return out\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "length",
+  "thinking_tokens": 12001,
+  "final": "",
+  "final_boxed": null,
+  "gold": "5",
+  "probes": [
+   [
+    400,
+    "5",
+    true
+   ],
+   [
+    800,
+    "5",
+    true
+   ],
+   [
+    1200,
+    "5",
+    true
+   ],
+   [
+    1600,
+    "5",
+    true
+   ],
+   [
+    2000,
+    "5",
+    true
+   ],
+   [
+    2400,
+    "5",
+    true
+   ],
+   [
+    2800,
+    "5",
+    true
+   ],
+   [
+    3200,
+    "5",
+    true
+   ],
+   [
+    3600,
+    "5",
+    true
+   ],
+   [
+    4000,
+    "5",
+    true
+   ],
+   [
+    4400,
+    "5",
+    true
+   ],
+   [
+    4800,
+    "5",
+    true
+   ],
+   [
+    5200,
+    "5",
+    true
+   ],
+   [
+    5600,
+    "5",
+    true
+   ],
+   [
+    6000,
+    "5",
+    true
+   ],
+   [
+    6400,
+    "5",
+    true
+   ],
+   [
+    6800,
+    "5",
+    true
+   ],
+   [
+    7200,
+    "5",
+    true
+   ],
+   [
+    7600,
+    "5",
+    true
+   ],
+   [
+    8000,
+    "5",
+    true
+   ],
+   [
+    8400,
+    "5",
+    true
+   ],
+   [
+    8800,
+    "5",
+    true
+   ],
+   [
+    9200,
+    "5",
+    true
+   ],
+   [
+    9600,
+    "5",
+    true
+   ],
+   [
+    10000,
+    "5",
+    true
+   ],
+   [
+    10400,
+    "5",
+    true
+   ],
+   [
+    10800,
+    "5",
+    true
+   ],
+   [
+    11200,
+    "5",
+    true
+   ],
+   [
+    11600,
+    "5",
+    true
+   ],
+   [
+    12000,
+    "5",
+    true
+   ]
+  ],
+  "auto_stop": [
+   7200,
+   "5",
+   "converged"
+  ],
+  "auto_answer": "The function `dedupe` is intended to remove duplicates from a list. However, the code is flawed because it adds elements to the `out` list only when they are already in the `seen` set, which results in the `out` list containing duplicates. The correct approach would be to add elements to the `out` list only when they are not in the `seen` set. \n\nIn the given code:\n- **Line 5** checks if `x` is in `seen`. If it is, it appends `x` to `out` and adds `x` to `seen`. This is the opposite of the correct logic, which should append `x` to `out` only when it is not in `seen`.\n- **Line 6** adds `x` to `seen` regardless of whether it is in `seen` or not. This is redundant and unnecessary.\n\nThe bug lies in **Line 5**, as it incorrectly appends elements to the `out` list when they are already in `seen`, leading to duplicates in the output. The correct logic would append elements to `out` only when they are not in `seen`.\n\n\\boxed{5}",
+  "auto_boxed": "5"
+ },
+ {
+  "i": 21,
+  "category": "open",
+  "prompt": "Design a web crawler that fetches 100M pages per day, respects robots.txt and per-domain politeness, and handles retries. Detail the frontier, deduplication, and failure handling.",
+  "finish": "stop",
+  "thinking_tokens": 3375,
+  "final": "Designing a web crawler that fetches **100M pages per day** while respecting **robots.txt**, enforcing **per-domain politeness**, and handling **retries** requires a structured approach. Below is a detailed breakdown of the components and implementation strategy:\n\n---\n\n### **1. Core Components**\n#### **Frontier (Work Queue)**\n- **Purpose**: Manage the list of URLs to crawl, ensuring efficient processing.\n- **Implementation**:\n  - Use a **priority queue (max-heap)** to prioritize the most promising URLs.\n  - Limit the queue size to **10,000 entries** (e.g., 10k URLs per second) to avoid overwhelming the system.\n  - **Exponential Backoff**: If the queue is full, evict the oldest entry (oldest first), ensuring the queue remains manageable.\n  - **Example**:  \n    ```python\n    from heapq import heappush, heappop\n    class WorkQueue:\n        def __init__(self):\n            self.queue = []\n            self.size = 0\n        def add_url(self, url):\n            heappush(self.queue, (url, time.time()))\n            self.size += 1\n            if self.size > 10000:\n                self.evict()\n        def evict(self):\n            # Evict the oldest entry\n            if self.size > 0:\n                heappop(self.queue)\n    ```\n\n#### **Deduplication**\n- **Purpose**: Prevent processing the same URL multiple times.\n- **Implementation**:\n  - Use a **set** or **hash map** to track visited URLs.\n  - Track **timestamps** or **hashes** to detect duplicates.\n  - Example:\n    ```python\n    visited = set()\n    def add_to_queue(url):\n        if url not in visited:\n            visited.add(url)\n            work_queue.add(url)\n    ```\n\n#### **Failure Handling**\n- **Purpose**: Recover from transient errors (e.g., 403, 404, 500) and avoid infinite loops.\n- **Implementation**:\n  - **Exponential Backoff**: Retry with increasing delays (e.g., 1s → 2s → 4s).\n  - **Retry Count**: Track retries per URL. If exceeded, mark the URL as failed.\n  - **Example**:\n    ```python\n    def handle_failure(error):\n        retries[url] += 1\n        if retries[url] >= MAX_RETRIES:\n            work_queue.put(url)  # Put back for later processing\n        else:\n            delay *= 2  # Double the delay for next attempt\n    ```\n\n#### **Per-Domain Politeness**\n- **Purpose**: Avoid overloading single domains (e.g., avoid 100 requests per minute per domain).\n- **Implementation**:\n  - Track **requests per domain** using a dictionary.\n  - If a domain exceeds the limit, skip it until the limit is reset.\n  - Example:\n    ```python\n    domain_requests = defaultdict(int)\n    def is_allowed(url):\n        domain = get_domain(url)\n        if domain_requests[domain] >= MAX_REQUESTS:\n            return False\n        # Proceed with crawling\n        domain_requests[domain] += 1\n        return True\n    ```\n\n---\n\n### **2. Key Design Decisions**\n#### **Rate Limiting**\n- **Per Domain**: Limit requests to **100 per minute** (adjustable).\n- **Global**: Limit total requests to **1000 per second** (adjustable).\n- **Implementation**: Use a **timestamp-based counter** for each domain.\n\n#### **Robots.txt Compliance**\n- **Parsing**: Parse `robots.txt` to extract allowed domains and links.\n- **Validation**: Ensure no forbidden links are crawled.\n- **Example**:\n  ```python\n  def parse_robots(url):\n      # Parse robots.txt and return allowed domains/links\n      # Return True if allowed, False otherwise\n  ```\n\n#### **Retry Logic**\n- **Strategy**: Exponential backoff (1s → 2s → 4s → ...).\n- **Threshold**: Retry up to **5 times** per URL.\n- **Logging**: Log retries and failures for debugging.\n\n---\n\n### **3. Performance Optimization**\n- **Efficient Data Structures**:\n  - Use **priority queues** (e.g., `heapq`) for the work queue.\n  - Use **sets** for visited URLs to avoid duplicates.\n- **Parallel Processing**:\n  - Use **threads** or **processes** to handle multiple URLs concurrently.\n- **Rate Limiting**:\n  - Use **sliding window** or **time-based counters** to enforce limits.\n\n---\n\n### **4. Example Workflow**\n1. **Parse Robots.txt**: Identify allowed domains and links.\n2. **Initialize**:\n   - `visited = set()`\n   - `domain_requests = defaultdict(int)`\n   - `work_queue = WorkQueue()`\n3. **Crawl**:\n   - Add URLs to the work queue if not visited and allowed.\n   - Process each URL:\n     - Check robots.txt and domain limits.\n     - Fetch the page, parse for new URLs.\n     - Add new URLs to the queue if not visited.\n     - Handle retries and failures.\n4. **Output**: Store crawled URLs, parse content, and log results.\n\n---\n\n### **5. Edge Cases**\n- **High Volume**: Use **asynchronous processing** and **rate limiting** to avoid overwhelming servers.\n- **Transient Errors**: Exponential backoff ensures retries without overloading.\n- **Forbidden Links**: Respect robots.txt and avoid crawling forbidden domains.\n\n---\n\n### **6. Metrics and Monitoring**\n- **Metrics**:\n  - Total pages crawled.\n  - Requests per domain.\n  - Retry counts per URL.\n- **Logging**: Log errors, retries, and successful crawls for debugging and analysis.\n\n---\n\n### **7. Conclusion**\nThis crawler balances **high throughput** (100M pages/day) with **robustness** (robots.txt compliance, per-domain politeness, retries), ensuring efficient and ethical web scraping. The design prioritizes **performance** through careful queuing, **fault tolerance** via exponential backoff, and **resource management** through rate limiting.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1000",
+    false
+   ],
+   [
+    800,
+    "1000",
+    false
+   ],
+   [
+    1200,
+    "1000",
+    false
+   ],
+   [
+    1600,
+    "1000",
+    false
+   ],
+   [
+    2000,
+    "1000",
+    false
+   ],
+   [
+    2400,
+    "1000",
+    false
+   ],
+   [
+    2800,
+    "100",
+    false
+   ],
+   [
+    3200,
+    "100",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 22,
+  "category": "open",
+  "prompt": "Design a ride-sharing dispatch system that matches riders to drivers within 2 seconds in a city with 50k active drivers, including geo-indexing, surge pricing, and failure modes.",
+  "finish": "stop",
+  "thinking_tokens": 2245,
+  "final": "To design a ride-sharing dispatch system that matches riders to drivers within 2 seconds, the system must balance efficiency, scalability, and real-time decision-making. Below is a structured approach incorporating geo-indexing, surge pricing, and failure modes:\n\n---\n\n### **Core Components**\n1. **Rider Request Handler**  \n   - Receives rider requests with location, time, and urgency.  \n   - Prioritizes requests based on proximity and demand.  \n\n2. **Driver Management System**  \n   - Tracks drivers via a **spatial index** (e.g., k-d tree) for quick location-based queries.  \n   - Manages availability, ratings, and surge pricing eligibility.  \n\n3. **Dispatch Module**  \n   - **Geo-Indexing**: Uses spatial indexes (e.g., k-d tree) to find nearby drivers.  \n   - **Surge Pricing**: Dynamically calculates prices based on demand (e.g., fewer drivers = higher surge rate).  \n   - **Matching Algorithm**: Greedy algorithm selects the closest, available, and highest-rated driver.  \n\n4. **Failover & Redundancy**  \n   - **Network Resilience**: Caching requests and retries on failed connections.  \n   - **Driver Unavailability**: Checks availability before matching; fallback to secondary instances.  \n   - **System Crashes**: Logs errors, retries, or switches to a backup system.  \n\n---\n\n### **Implementation Details**\n\n#### **Geo-Indexing**\n- **Data Structure**: Use a **k-d tree** or **quadtree** for spatial queries.  \n- **Implementation**:  \n  - Store drivers with their coordinates and availability.  \n  - Query for drivers within a radius of the rider’s location using spatial indexing.  \n- **Example**: A rider in NYC requests a ride; the system finds drivers within 5 km using the k-d tree.  \n\n#### **Surge Pricing**\n- **Dynamic Pricing Logic**:  \n  - **Demand Threshold**: If <10 drivers available, surge pricing applies (e.g., 2x base rate).  \n  - **Time-Based**: Higher prices during peak hours (e.g., 10 AM–6 PM).  \n  - **Location-Based**: High-demand areas (e.g., downtown) trigger higher surge rates.  \n- **Code Example**:  \n  ```python\n  def calculate_surge_price(drivers_available, rider_location):\n      if drivers_available < 10 or rider_location in high_demand_areas:\n          return 2.0  # Example surge factor\n      else:\n          return 1.0\n  ```\n\n#### **Matching Algorithm**\n- **Greedy Approach**:  \n  - Sort drivers by proximity and availability.  \n  - Select the top 3 drivers for immediate matching.  \n- **Efficiency**:  \n  - Use a **priority queue** or **heap** to prioritize the closest, available drivers.  \n  - Parallel processing across distributed nodes to meet the 2-second deadline.  \n\n#### **Failure Modes**\n- **Network Outages**:  \n  - Cache requests and retry on reconnect.  \n  - Use a **retry queue** for failed requests.  \n- **Driver Unavailability**:  \n  - Check availability in real-time.  \n  - Fallback to secondary instances or log errors.  \n- **System Crashes**:  \n  - Log errors and switch to a **backup dispatch module**.  \n  - Use **transactional data** to ensure consistency.  \n\n---\n\n### **Scalability & Optimization**\n- **Distributed Architecture**:  \n  - Split the dispatch module across multiple nodes for parallel processing.  \n  - Use **message queues** (e.g., Kafka) to handle high-volume requests.  \n- **Load Balancing**:  \n  - Distribute rider requests evenly across drivers.  \n  - Use **predictive analytics** to anticipate demand and pre-allocate drivers.  \n\n---\n\n### **Example Workflow**\n1. **Rider Request**: A rider in NYC requests a ride.  \n2. **Geo-Indexing**: The system finds 10 nearby drivers using a k-d tree.  \n3. **Surge Pricing**: 5 drivers are available, so surge pricing is applied (e.g., 1.5x base rate).  \n4. **Matching**: The system selects the closest, available driver with the highest rating.  \n5. **Failure Handling**: If the driver is unavailable, the system retries or logs the error.  \n\n---\n\n### **Key Metrics**\n- **Response Time**: ≤2 seconds (via efficient algorithm and parallel processing).  \n- **Driver Availability**: 95% uptime with fallback mechanisms.  \n- **Surge Pricing Accuracy**: 98% of requests qualify for surge pricing.  \n\n---\n\n### **Conclusion**\nThis system leverages spatial indexing, real-time demand analysis, and distributed processing to ensure fast, reliable matches. By integrating surge pricing and robust failure modes, it balances efficiency with scalability, meeting the 2-second deadline while handling the complexities of a large, dynamic ride-sharing network.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "2",
+    false
+   ],
+   [
+    800,
+    "2",
+    false
+   ],
+   [
+    1200,
+    "2",
+    false
+   ],
+   [
+    1600,
+    "2",
+    false
+   ],
+   [
+    2000,
+    "2",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 23,
+  "category": "open",
+  "prompt": "Design an API gateway that handles authentication, rate limiting, request transformation, and canary releases for 300 backend services.",
+  "finish": "stop",
+  "thinking_tokens": 1506,
+  "final": "Designing an API gateway to manage authentication, rate limiting, request transformation, and canary releases for 300 backend services requires a structured, scalable architecture. Below is a detailed breakdown of the components and their implementation:\n\n---\n\n### **1. Core Components of the API Gateway**\n\n#### **a. Authentication Layer**\n- **Supported Methods**: JWT, OAuth2, API keys, Bearer tokens.\n- **Functionality**:\n  - Token validation (expiration, signature, scope).\n  - Authorization checks (role-based, permission checks).\n  - Token storage (e.g., in a database for refresh tokens).\n  - Integration with identity providers (e.g., Firebase, Azure AD).\n- **Middleware**:\n  - JWT parser and validator.\n  - Token cache for refresh tokens.\n  - Role-based access control (RBAC) enforcement.\n\n#### **b. Rate Limiting Layer**\n- **Implementation**:\n  - **Token Bucket Algorithm**: Per service rate limiting.\n  - **Centralized Rate Limiter**: Tracks usage per service, with a database for persistence.\n- **Functionality**:\n  - Enforces limits (e.g., 100 requests/second) per service.\n  - Tracks cumulative usage and resets tokens after expiration.\n  - Supports dynamic rate limits based on service-specific metrics.\n- **Middleware**:\n  - Rate limiter with caching for efficiency.\n  - Integration with a distributed key-value store (e.g., Redis) for per-service limits.\n\n#### **c. Request Transformation Layer**\n- **Functionality**:\n  - Modify request headers (e.g., adding `X-Forwarded-For` for logging).\n  - Transform request paths (e.g., converting `/api/v1/users` to `/api/users`).\n  - Modify request bodies (e.g., adding metadata, compressing payloads).\n  - Handle request methods (e.g., converting `GET` to `POST` for certain endpoints).\n- **Middleware**:\n  - Request transformer with customizable rules.\n  - Integration with logging/monitoring tools (e.g., ELK stack).\n\n#### **d. Canary Release Management**\n- **Implementation**:\n  - **Canary Ratio Configuration**: Routes 10% of requests to the canary version.\n  - **Dynamic Routing**: Based on the current active version of the service.\n- **Functionality**:\n  - Distributes requests to the canary version (e.g., `service-123`).\n  - Tracks canary usage and updates the routing configuration dynamically.\n  - Supports rollback mechanisms if issues are detected.\n- **Middleware**:\n  - Canary ratio configurator.\n  - Dynamic routing with service discovery (e.g., Consul, etcd).\n\n#### **e. Routing and Load Balancing**\n- **Implementation**:\n  - **Service Discovery**: Dynamically fetches active services (e.g., via Consul or etcd).\n  - **Load Balancing**: Distributes requests based on:\n    - Round-robin.\n    - Weighted round-robin (based on service health).\n    - Canary ratio (e.g., 10% to canary, 90% to existing).\n- **Middleware**:\n  - Load balancer with health checks.\n  - Service discovery with caching.\n\n---\n\n### **2. Architecture Overview**\n\n```\n[API Gateway]\n│\n├── Authentication Middleware\n├── Rate Limiting Middleware\n├── Request Transformation Middleware\n├── Canary Release Middleware\n└── Routing & Load Balancing\n│\n├── Service Discovery (e.g., Consul, etcd)\n└── Backend Services (300 services)\n```\n\n---\n\n### **3. Key Features**\n\n| Feature | Description |\n|--------|-------------|\n| **Authentication** | JWT, OAuth2, API keys, token refresh. |\n| **Rate Limiting** | Token bucket per service, centralized tracking. |\n| **Request Transformation** | Headers, paths, bodies, methods. |\n| **Canary Releases** | Dynamic routing with 10% to canary. |\n| **Scalability** | Distributed caching, service discovery, load balancing. |\n\n---\n\n### **4. Implementation Details**\n\n#### **a. Authentication**\n- Use a JWT library (e.g., Python `PyJWT`) for parsing and validating tokens.\n- Store refresh tokens in a database (e.g., Redis) for automatic refreshes.\n- Integrate with identity providers (e.g., Firebase, Azure AD) for seamless authentication.\n\n#### **b. Rate Limiting**\n- Use a library like `flask-limiter` for per-service rate limiting.\n- Store service-specific limits in a Redis cache for fast access.\n- Implement a \"burst\" limit for short-term spikes (e.g., 200 requests/second for 10 seconds).\n\n#### **c. Request Transformation**\n- Create a middleware layer that modifies requests before sending them to the backend.\n- Example: Add `X-Forwarded-For` for logging, or transform `GET` to `POST` for certain endpoints.\n\n#### **d. Canary Releases**\n- Configure the canary ratio in the gateway (e.g., 10% to `service-123`).\n- Use a service discovery tool to fetch the current active service.\n- Track canary usage and update routing dynamically.\n\n#### **e. Routing & Load Balancing**\n- Use a load balancer (e.g., Nginx, HAProxy) with service discovery.\n- Implement health checks for backend services to avoid routing to unhealthy ones.\n- Use a centralized routing table to manage canary ratios and load balancing.\n\n---\n\n### **5. Tools and Technologies**\n\n| Component | Tool/Technology |\n|----------|------------------|\n| Authentication | JWT, OAuth2, Redis |\n| Rate Limiting | Flask-Limiter, Redis |\n| Request Transformation | Middleware, logging |\n| Canary Releases | Service discovery (Consul, etcd), dynamic routing |\n| Load Balancing | Nginx, HAProxy, Kubernetes |\n\n---\n\n### **6. Example Workflow**\n\n1. **Incoming Request**:\n   - User sends a request with a token.\n   - Gateway validates the token (authentication).\n   - Checks rate limits (rate limiting).\n   - Applies transformation (e.g., adds headers).\n   - Routes to the appropriate service (based on canary ratio and load balancing).\n\n2. **Backend Processing**:\n   - Service handles the request.\n   - Returns a response.\n   - Logs metrics for rate limiting and canary usage.\n\n3. **Monitoring**:\n   - Track canary usage, request rates, and service health.\n   - Use metrics for optimization (e.g., adjust canary ratios based on performance).\n\n---\n\n### **7. Challenges and Solutions**\n\n- **300 Services**: Use service discovery and dynamic routing to avoid high latency.\n- **Rate Limiting**: Use Redis for per-service limits and cache results.\n- **Canary Releases**: Implement a canary ratio configurator and dynamic routing.\n- **Scalability**: Use distributed caching (Redis), load balancing, and service discovery.\n\n---\n\n### **8. Conclusion**\n\nThe API gateway is a central hub that manages authentication, rate limiting, request transformation, and canary releases for 300 backend services. By leveraging middleware, service discovery, and dynamic routing, the gateway ensures scalability, security, and efficient request distribution. Key components like JWT validation, rate limiting with Redis, and canary ratios are critical for maintaining performance and reliability.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10",
+    false
+   ],
+   [
+    800,
+    "10",
+    false
+   ],
+   [
+    1200,
+    "100",
+    false
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ }
+]

@@ -44,7 +44,7 @@ To run from a checkout instead: `uv tool install .`
 
 **Shadow mode** (always on). Every request that thinks to completion is recorded: where Overthink Guard *would* have stopped, and whether the answer at that point matched the final one. The UI shows the running totals.
 
-**Auto mode** (opt-in, `--mode auto`): a runaway guard. Once thinking passes 6,000 tokens, if the model's probed answer is the same 4 times in a row, Overthink Guard does an automatic Answer now. It leaves normal-length thinking alone. In a pre-registered test on 70 fresh problems it cost no correct answers, and it turned 8 of 19 runaway runs, which would otherwise have produced nothing, into correct answers. The final chunk's `otg.auto` is `true` when this happens.
+**Auto mode** (opt-in, `--mode auto`): a runaway guard. Once thinking passes 6,000 tokens, if the model's probed answer is the same 4 times in a row, Overthink Guard does an automatic Answer now. A probed answer only counts when a second, one-line probe states the same answer. For open-ended questions (designs, explanations), which have no short answer, Auto instead stops thinking that runs past a 10,000-token budget. It leaves normal-length thinking alone. In a pre-registered test on 70 fresh problems it cost no correct answers, and it turned 8 of 19 runaway runs, which would otherwise have produced nothing, into correct answers. The final chunk's `otg.auto` is `true` when this happens.
 
 **Active probing** (opt-in, `--probe`; always on in Auto mode). Once thinking passes 6,000 tokens, the generation pauses briefly every 400 tokens. The model is asked for its current answer in a few tokens, and then the thinking resumes where it left off. Probing is off by default because it adds short pauses; the default detector reads only the thinking text.
 
@@ -60,6 +60,7 @@ These results come from one small model, math questions only, and small samples,
 | Same, 20 held-out problems | `k=4` from the start lost 2 answers here (57% saved): the model can hold a wrong answer for 2,000+ tokens before correcting it. Ignoring probes before 3,000 thinking tokens (the new default) lost none on either sample and saved 40% overall. That rule was also chosen on these samples, so it still needs validating. |
 | Same, 34 more held-out problems (rule fixed beforehand) | Ignoring probes before 3,000 tokens and then `k=4` saved 32%, but lost 2 answers and gained 1 (net −1 of 34). The misses were late corrections, where a wrong answer was held for 5,000+ tokens, which no answer-stability rule can foresee. Probing is not yet accurate enough to stop automatically. |
 | Runaway guard, rule fixed beforehand, 51 fresh completed runs + 19 runaway runs (qwen3:1.7b and deepseek-r1:1.5b) | Probing only after 6,000 tokens lost no answers on completed runs and gained 1. It stopped all 19 runaway runs, which had hit our 12,000-token cap without answering, and 8 of them gave the correct answer. Overall it saved 21–23% of thinking tokens under that cap. This is the current default. |
+| Same guard with the one-line cross-check, rule fixed beforehand: 48 new design prompts (open designs, design decisions, code bugs, some in Korean) and 60 new math problems | None of the 46 completed design answers and none of the 44 completed math answers were cut or changed. It stopped all 18 runaway runs; the design ones gave a correct choice and a correct bug explanation where waiting produced nothing. |
 | Probe cost | ~4.7% of wall time on Apple Silicon GPU, ~5% CPU-only; each probe hits the KV cache |
 
 ## Configuration
@@ -83,6 +84,7 @@ local:
     probe_interval_tokens: 400
     probe_min_tokens: 6000    # no probes before this much thinking
     probe_converge_k: 4
+    open_budget_tokens: 10000 # open-ended prompts: stop thinking past this
 privacy:
   stats_file: null            # null keeps Shadow statistics in memory only
 ```
@@ -104,7 +106,7 @@ privacy:
 - Intervention covers streamed single-turn text chat; everything else passes through.
 - No CORS headers, so browser apps that call the proxy directly from a page will not work. Server-side clients are fine.
 - When a request is intervened or probed, `usage.prompt_tokens` is an estimate, because Ollama does not report it for a cut stream.
-- Probing assumes a short answer that fits in `\boxed{}`. It does not converge on open-ended or multiple-choice questions.
+- Open-ended prompts have no short answer to probe, so they fall back to a plain thinking budget. That budget has not yet been seen stopping a runaway design question in testing.
 
 ## Prior work
 
