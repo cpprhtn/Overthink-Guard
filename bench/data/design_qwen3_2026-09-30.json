@@ -1,0 +1,844 @@
+[
+ {
+  "i": 0,
+  "category": "open",
+  "prompt": "Design a URL shortener that handles 10k writes per second. Outline the components and the data model.",
+  "finish": "stop",
+  "thinking_tokens": 2514,
+  "final": "To design a **URL shortener** capable of handling **10,000 writes per second**, the system must balance **high throughput**, **data integrity**, and **scalability**. Below is a detailed breakdown of the components and data model.\n\n---\n\n### **1. Core Components**\n\n#### **A. Database**\n- **Choice**: Use a **distributed NoSQL database** like **Cassandra** or **MongoDB** for high write throughput.\n- **Key Features**:\n  - **Partitioning**: Shard the database based on the short code or original URL to distribute load.\n  - **Write-Ahead Log (WAL)**: Ensure durability and recovery.\n  - **Indexing**: Create a unique index on the `short_code` column for fast lookups.\n  - **Caching**: Use a **Redis cache** for short codes to reduce database load (e.g., cache 10k short codes).\n\n#### **B. Shortening Algorithm**\n- **Objective**: Generate unique, short, and random strings from long URLs.\n- **Approach**:\n  - **Hashing**: Use a hash function (e.g., SHA-256) on the original URL to generate a unique identifier.\n  - **Random String**: Generate a random string (e.g., 6–12 characters) and check for uniqueness using a **hash set** or **database**.\n  - **Collision Handling**: Use a **counter** or **hash with salt** to minimize collisions.\n  - **Example**:\n    ```python\n    def generate_short_code(original_url):\n        hash_value = hash(original_url)\n        while hash_value in used_hashes:\n            hash_value += 1\n        return hash_value[:6]\n    ```\n\n#### **C. Rate Limiting**\n- **Mechanism**: Use a **token bucket** or **rate limiting algorithm** (e.g., Redis `ptree` or `rate-limit` module).\n- **Goal**: Prevent overwhelming the system with 10k writes/sec.\n- **Example**:\n  - Allow 10k writes/sec with a burst limit of 1000 writes.\n  - Use Redis `PTree` for efficient rate limiting.\n\n#### **D. HTTP Server**\n- **Choice**: Use a **fast, lightweight HTTP server** like **Node.js** or **Nginx**.\n- **Features**:\n  - Handle requests efficiently.\n  - Use **WebSocket** or **GraphQL** for real-time updates (optional).\n  - Implement **Gzip** for compression.\n\n#### **E. Frontend**\n- **Components**:\n  - **Web Interface**: Display shortened URLs and allow users to input long URLs.\n  - **Mobile App**: Native app for iOS/Android with URL shortening functionality.\n  - **API**: RESTful API for backend integration (e.g., `/shorten`, `/get`).\n\n---\n\n### **2. Data Model**\n\n#### **Table Schema (Cassandra Example)**\n```sql\nCREATE TABLE short_urls (\n    short_code TEXT PRIMARY KEY,\n    original_url TEXT NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n    expiration TIMESTAMP\n);\n```\n\n#### **Key Columns**\n- **short_code**: Unique identifier (e.g., 6-character random string).\n- **original_url**: The long URL to be shortened.\n- **created_at**: Timestamp when the short code was generated.\n- **expiration**: Optional timestamp for URL expiration (e.g., 7 days).\n\n#### **Indexing**\n- **Unique Index**: On `short_code` to ensure uniqueness.\n- **Secondary Index**: On `original_url` for fast lookups (e.g., caching).\n\n---\n\n### **3. Optimization Strategies**\n\n#### **A. Write Optimization**\n- **Batching**: Batch multiple shortening requests into a single write operation.\n- **Compression**: Use **Gzip** or **Snappy** for database writes.\n- **Compression on API**: Compress responses (e.g., JSON) to reduce bandwidth.\n\n#### **B. Cache Strategy**\n- **Redis Cache**:\n  - Store **short_code** in Redis (e.g., `SET short_code:123 \"https://example.com\"`).\n  - Use **TTL** (Time to Live) for short codes to expire after use.\n- **Database Persistence**: Store the actual URL in the database to ensure data integrity.\n\n#### **C. Rate Limiting**\n- **Token Bucket**:\n  - Allow 10,000 writes/sec with a burst limit of 1000.\n  - Use Redis `ptree` to track tokens.\n- **Example**:\n  ```python\n  # Redis command\n  ptree.set(\"rate_limit:10000\", \"1000\")\n  ```\n\n---\n\n### **4. Example Workflow**\n\n1. **User Request**:\n   - User inputs a long URL (e.g., `https://example.com/long-path`).\n   - HTTP server receives the request.\n\n2. **Shortening**:\n   - The server generates a unique short code (e.g., `5j9k2m`).\n   - Redis cache stores the short code with the original URL.\n   - Database writes the entry with `created_at` and `expiration`.\n\n3. **Response**:\n   - The server returns the shortened URL (e.g., `https://short.url/5j9k2m`).\n   - The Redis cache is updated with the new short code.\n\n4. **Expiration**:\n   - If `expiration` is set, the short code is removed from the cache after the TTL.\n\n---\n\n### **5. Scalability Considerations**\n\n- **Horizontal Scaling**:\n  - Shard the database based on the short code or original URL.\n  - Use **Cassandra** or **MongoDB** with sharding.\n- **Load Balancing**:\n  - Distribute requests across multiple servers.\n- **Auto Scaling**:\n  - Use cloud services (e.g., AWS Lambda, Kubernetes) to scale automatically based on traffic.\n\n---\n\n### **6. Monitoring & Metrics**\n\n- **Metrics**:\n  - Write rate (10k/sec).\n  - Cache hit rate.\n  - Expiration rate.\n  - Error rates (e.g., collision).\n- **Tools**:\n  - **Prometheus** for monitoring.\n  - **Grafana** for visualizing metrics.\n  - **Redis** for tracking cache usage.\n\n---\n\n### **7. Conclusion**\n\nThis design ensures the URL shortener can handle **10k writes/sec** with:\n- **High throughput** via optimized databases and caching.\n- **Data integrity** through indexing and persistence.\n- **Scalability** via horizontal scaling and sharding.\n- **Reliability** through rate limiting and caching.\n\nBy combining efficient databases, smart algorithms, and caching, the system achieves the required performance while maintaining flexibility and scalability.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10000"
+   ],
+   [
+    800,
+    "10000"
+   ],
+   [
+    1200,
+    "10000"
+   ],
+   [
+    1600,
+    "10000"
+   ],
+   [
+    2000,
+    "10000"
+   ],
+   [
+    2400,
+    "10000"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 1,
+  "category": "open",
+  "prompt": "How would you structure the database schema for a multi-tenant SaaS invoicing system?",
+  "finish": "length",
+  "thinking_tokens": 12001,
+  "final": "",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1"
+   ],
+   [
+    800,
+    "1"
+   ],
+   [
+    1200,
+    "1"
+   ],
+   [
+    1600,
+    "1"
+   ],
+   [
+    2000,
+    "1"
+   ],
+   [
+    2400,
+    null
+   ],
+   [
+    2800,
+    null
+   ],
+   [
+    3200,
+    null
+   ],
+   [
+    3600,
+    "1"
+   ],
+   [
+    4000,
+    null
+   ],
+   [
+    4400,
+    null
+   ],
+   [
+    4800,
+    null
+   ],
+   [
+    5200,
+    "1"
+   ],
+   [
+    5600,
+    null
+   ],
+   [
+    6000,
+    "1"
+   ],
+   [
+    6400,
+    "1"
+   ],
+   [
+    6800,
+    null
+   ],
+   [
+    7200,
+    null
+   ],
+   [
+    7600,
+    null
+   ],
+   [
+    8000,
+    null
+   ],
+   [
+    8400,
+    "1"
+   ],
+   [
+    8800,
+    null
+   ],
+   [
+    9200,
+    null
+   ],
+   [
+    9600,
+    null
+   ],
+   [
+    10000,
+    "1"
+   ],
+   [
+    10400,
+    "1"
+   ],
+   [
+    10800,
+    "1"
+   ],
+   [
+    11200,
+    "1"
+   ],
+   [
+    11600,
+    "1"
+   ],
+   [
+    12000,
+    "1"
+   ]
+  ],
+  "auto_stop": [
+   11200,
+   "1"
+  ],
+  "auto_answer": "To structure a **multi-tenant SaaS invoicing system**, the database schema must support **multiple tenants** sharing the same database while maintaining **isolation** for each tenant's data. This requires careful design to ensure data integrity, security, and scalability.\n\n---\n\n### **Key Entities and Relationships**\n\n#### 1. **Tenants Table**\nThis table stores information about each tenant (customer). Since multiple tenants share the same database, each tenant's data must be isolated. The tenant ID is a **foreign key** to the **Customers** table.\n\n```sql\nCREATE TABLE tenants (\n    tenant_id INT PRIMARY KEY,\n    name VARCHAR(255) NOT NULL,\n    domain VARCHAR(255) NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n```\n\n#### 2. **Customers Table**\nThis table stores customer information, which is typically the same as the tenant. The `tenant_id` is a **foreign key** to the `tenants` table.\n\n```sql\nCREATE TABLE customers (\n    customer_id INT PRIMARY KEY,\n    name VARCHAR(255) NOT NULL,\n    email VARCHAR(255) NOT NULL,\n    phone VARCHAR(20),\n    tenant_id INT,\n    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)\n);\n```\n\n#### 3. **Invoices Table**\nStores invoice data for a specific tenant. Each invoice is associated with a tenant and a customer.\n\n```sql\nCREATE TABLE invoices (\n    invoice_id INT PRIMARY KEY,\n    tenant_id INT,\n    customer_id INT,\n    invoice_date DATE DEFAULT CURRENT_DATE,\n    amount DECIMAL(10, 2) NOT NULL,\n    status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',\n    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),\n    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)\n);\n```\n\n#### 4. **InvoiceItems Table**\nThis table stores individual items (e.g., products, services) for an invoice.\n\n```sql\nCREATE TABLE invoice_items (\n    invoice_item_id INT PRIMARY KEY,\n    invoice_id INT,\n    item_name VARCHAR(255) NOT NULL,\n    price DECIMAL(10, 2) NOT NULL,\n    quantity INT DEFAULT 1,\n    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id)\n);\n```\n\n#### 5. **Payments Table**\nStores payment details for invoices.\n\n```sql\nCREATE TABLE payments (\n    payment_id INT PRIMARY KEY,\n    invoice_id INT,\n    payment_date DATE DEFAULT CURRENT_DATE,\n    amount DECIMAL(10, 2) NOT NULL,\n    status ENUM('pending', 'paid', 'failed') DEFAULT 'pending',\n    FOREIGN KEY (invoice_id) REFERENCES invoices(invoice_id)\n);\n```\n\n---\n\n### **Optional Tables for Tenant-Specific Data**\n- **TenantSettings**: Store tenant-specific configurations (e.g., currency, timezone).\n- **TenantPreferences**: Store tenant-specific preferences (e.g., language, theme).\n- **TenantProducts**: Store products or services specific to a tenant.\n\n---\n\n### **Key Design Considerations**\n\n1. **Isolation**:\n   - Each tenant's data is stored in the same database, but each tenant's data is isolated using **tenant IDs**.\n   - Use **foreign keys** to link tenants to customers and invoices.\n\n2. **Scalability**:\n   - The schema is designed to support **horizontal scaling** (multiple tenants sharing the same database).\n   - Use **indexes** on frequently queried columns (e.g., `tenant_id`, `customer_id`).\n\n3. **Security**:\n   - Ensure that **tenant-specific data is isolated** using proper access controls.\n   - Use **role-based access control** (RBAC) if needed.\n\n4. **Performance**:\n   - Use **JOINs** efficiently to retrieve tenant-specific data.\n   - Consider **materialized views** for frequently accessed tenant data.\n\n---\n\n### **Example Queries**\n\n#### Retrieve all invoices for a specific tenant:\n```sql\nSELECT * FROM invoices\nWHERE tenant_id = 1;\n```\n\n#### Retrieve all items for a specific invoice:\n```sql\nSELECT * FROM invoice_items\nWHERE invoice_id = 101;\n```\n\n#### Retrieve all payments for a specific invoice:\n```sql\nSELECT * FROM payments\nWHERE invoice_id = 101;\n```\n\n---\n\n### **Summary**\n\n| Entity | Description |\n|--------|-------------|\n| `tenants` | Stores tenant information. |\n| `customers` | Stores customer information, linked to tenants. |\n| `invoices` | Stores invoice data, linked to tenants and customers. |\n| `invoice_items` | Stores invoice items. |\n| `payments` | Stores payment details. |\n\nThis schema ensures that each tenant's data is isolated while allowing efficient querying and scalability for a multi-tenant SaaS invoicing system.",
+  "auto_boxed": null
+ },
+ {
+  "i": 2,
+  "category": "open",
+  "prompt": "Propose a caching strategy for a read-heavy product catalog API whose prices change several times a day.",
+  "finish": "stop",
+  "thinking_tokens": 3204,
+  "final": "To address the challenge of a **read-heavy product catalog API** with **frequent price updates**, a **caching strategy** must balance **freshness** and **performance**. Here's a structured approach:\n\n---\n\n### **Caching Strategy Overview**\n1. **Short-Term TTL (Time to Live)**:\n   - Set a short TTL (e.g., **1 minute**) for cache entries to ensure that cached data is invalidated promptly when prices change.\n   - This prevents stale data from being served indefinitely, especially for frequently updated fields like prices.\n\n2. **Version Number in Cache Key**:\n   - Include a **version number** in the cache key to track when the price was last updated.\n   - Each product entry includes:\n     - `product_id`\n     - `current_price`\n     - `version` (increments on price updates)\n     - `last_updated_time`\n\n3. **Cache Invalidation on Price Change**:\n   - When a price is updated:\n     - **Increment the version number**.\n     - **Invalidate all cached entries** for the old version (e.g., using a key like `product_id-version`).\n     - Store the new version and timestamp in the cache.\n\n4. **Validation on Request**:\n   - When a client requests product data:\n     - Check if the cached data is still valid:\n       - `version` matches the current version.\n       - `last_updated_time` is within the TTL.\n     - If valid, return the cached data.\n     - If invalid, fetch the latest data from the database and update the cache with the new version and timestamp.\n\n5. **Hybrid Approach**:\n   - Combine **TTL** with **cache invalidation** mechanisms:\n     - Set TTL to **1 minute**.\n     - When a price is updated, invalidate the cache for **10 seconds** (shorter than TTL) to ensure quick expiration of old entries.\n     - Clients check the cache and, if expired, fetch new data.\n\n6. **Implementation Considerations**:\n   - **Cache Store**: Use a **key-value store** (e.g., Redis) for fast invalidation and retrieval.\n   - **Database Sync**: Ensure the cache is synchronized with the database when prices change.\n   - **Background Jobs**: Use a **scheduled task** or **event-driven system** to invalidate old cache entries when prices are updated.\n\n---\n\n### **Example Workflow**\n1. **Price Update**:\n   - Product `A` has price `100` and version `1`.\n   - Price is updated to `110`, version becomes `2`.\n   - Invalidate all cache entries for `A-1` (TTL: 10s).\n\n2. **Client Request**:\n   - Cache entry for `A-2` is valid (TTL: 1 minute).\n   - Return cached data: `price=110`.\n\n3. **Stale Data**:\n   - If cache for `A-1` is expired (TTL: 10s), client fetches new data from the database and updates the cache with `A-2`.\n\n---\n\n### **Benefits**\n- **Freshness**: Short TTL ensures prices are always up-to-date.\n- **Performance**: Minimizes database queries by caching frequent data.\n- **Scalability**: Efficient invalidation and retrieval with a key-value store.\n- **Reliability**: Versioning ensures correct data is served even if cache is expired.\n\n---\n\n### **Conclusion**\nThis strategy balances **freshness** and **performance** by leveraging **TTL**, **versioning**, and **cache invalidation**. It ensures that the API remains responsive to frequent price updates while minimizing data retrieval from the database. The use of a **key-value store** (e.g., Redis) and **versioned cache keys** is critical for efficient invalidation and retrieval.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10"
+   ],
+   [
+    800,
+    "1"
+   ],
+   [
+    1200,
+    "1"
+   ],
+   [
+    1600,
+    "1"
+   ],
+   [
+    2000,
+    "1"
+   ],
+   [
+    2400,
+    "1"
+   ],
+   [
+    2800,
+    "1"
+   ],
+   [
+    3200,
+    "1"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 3,
+  "category": "open",
+  "prompt": "Design a rate limiter for a public API that runs on multiple servers.",
+  "finish": "stop",
+  "thinking_tokens": 6381,
+  "final": "Designing a rate limiter for a public API with multiple servers requires balancing fairness, scalability, and performance. Below is a structured approach to implement such a system:\n\n---\n\n### **1. Core Concepts**\n- **Rate Limit**: Control the number of requests per unit time (e.g., per minute, per second).\n- **Distributed Servers**: Multiple servers must share the rate limit collectively.\n- **User/IP Tracking**: Different users or IPs may have different rate limits (e.g., premium users vs. free users).\n\n---\n\n### **2. Key Components**\n\n#### **A. Rate Limit Parameters**\n- **Time Window**: Define the time interval (e.g., 1 minute, 1 hour).\n- **Limit**: Number of requests allowed per window (e.g., 100 requests/minute).\n\n#### **B. Rate Limiter Mechanism**\n- **Sliding Window (Recommended)**:\n  - Tracks the number of requests in the last `T` time units (e.g., 1 minute).\n  - If the count exceeds the limit, the request is rejected.\n  - Efficient for distributed systems as it avoids token bucket complexity.\n\n#### **C. User/IP Tracking**\n- **Per User/Per IP**:\n  - Track the number of requests for each user/IP.\n  - Apply different limits based on user type (e.g., premium users have higher limits).\n\n#### **D. Distributed Architecture**\n- **Global Sliding Window**:\n  - A centralized system tracks requests for all users/IPs.\n  - Each server's requests are added to the global window.\n  - If the window exceeds the limit, the request is rejected.\n\n---\n\n### **3. Implementation Details**\n\n#### **A. Data Structures**\n- **Global Sliding Window**:\n  - Use a `Map<String, Long>` to store the number of requests per user/IP.\n  - Track the current window count and the rate limit.\n\n#### **B. Rate Limit Enforcement**\n- **Sliding Window Algorithm**:\n  - For each request:\n    1. Increment the count for the user/IP in the sliding window.\n    2. If the count exceeds the limit, reject the request.\n    3. If within the limit, allow the request and update the window.\n\n#### **C. Distributed Coordination**\n- **Centralized System**:\n  - A single server or service manages the sliding window.\n  - Each server sends requests to the centralized system, which tracks the global count.\n  - If the global count exceeds the limit, the request is rejected.\n\n#### **D. Handling Different User Types**\n- **Custom Rate Limits**:\n  - Allow users to set their own rate limits (e.g., via API keys or headers).\n  - The centralized system applies these limits dynamically.\n\n#### **E. Time Window Adjustment**\n- **Dynamic Window Size**:\n  - Adjust the window size (e.g., 1 minute) based on the API's requirements.\n  - For high-traffic APIs, use smaller windows (e.g., 1 second) to reduce latency.\n\n---\n\n### **4. Example Implementation (Pseudocode)**\n\n```python\nclass RateLimiter:\n    def __init__(self, limit, window_size):\n        self.limit = limit\n        self.window_size = window_size\n        self.users = {}  # Maps user/IP to request count in window\n\n    def add_request(self, user_ip):\n        if user_ip not in self.users:\n            self.users[user_ip] = 0\n        current_count = self.users[user_ip]\n        self.users[user_ip] = current_count + 1\n\n        # Check if window size is exceeded\n        if self.window_size > 0:\n            if current_count >= self.limit:\n                return False\n            else:\n                return True\n        else:\n            return False\n\n    def update_window(self):\n        # For distributed systems, this would be handled by a centralized service\n        pass\n```\n\n---\n\n### **5. Considerations**\n\n- **Performance**: Ensure the rate limiter is efficient enough for high-traffic APIs.\n- **Scalability**: Use a centralized system to handle distributed servers.\n- **User Experience**: Allow users to set custom rate limits (e.g., via API keys).\n- **Error Handling**: Gracefully reject requests that exceed the limit, with appropriate logging.\n\n---\n\n### **6. Advanced Features**\n\n- **Token Bucket for Flexibility**:\n  - Use a token bucket with a fixed capacity and refill rate.\n  - Allow different refill rates for different users/IPs.\n  - Efficient for scenarios where rate limits are not strictly enforced per window.\n\n- **Dynamic Rate Limits**:\n  - Allow users to adjust their rate limits dynamically (e.g., via API).\n\n---\n\n### **7. Conclusion**\n\nA robust rate limiter for a public API with multiple servers should use a **sliding window** approach to ensure fairness and scalability. It must track requests per user/IP, enforce the rate limit globally, and handle distributed systems efficiently. By combining a centralized sliding window with dynamic rate limits, the system can balance performance, fairness, and user experience.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "100"
+   ],
+   [
+    800,
+    "100"
+   ],
+   [
+    1200,
+    "100"
+   ],
+   [
+    1600,
+    "100"
+   ],
+   [
+    2000,
+    "100"
+   ],
+   [
+    2400,
+    "100"
+   ],
+   [
+    2800,
+    "100"
+   ],
+   [
+    3200,
+    "100"
+   ],
+   [
+    3600,
+    "100"
+   ],
+   [
+    4000,
+    "100"
+   ],
+   [
+    4400,
+    "100"
+   ],
+   [
+    4800,
+    "100"
+   ],
+   [
+    5200,
+    "100"
+   ],
+   [
+    5600,
+    "sliding\\window"
+   ],
+   [
+    6000,
+    "100"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 4,
+  "category": "open",
+  "prompt": "How would you move the user service out of a monolith into its own service without downtime?",
+  "finish": "stop",
+  "thinking_tokens": 1499,
+  "final": "To migrate the user service out of a monolith into its own service without downtime, the following steps and strategies can be employed, leveraging modern tools and architectural principles:\n\n---\n\n### **Key Concepts**\n1. **No Downtime Migration**: The existing functionality must continue to operate as before, so the migration must be seamless.\n2. **Service Boundaries**: Identify the user service's responsibilities and ensure it is isolated from the rest of the monolith.\n3. **Communication Bridge**: Ensure the new service can communicate with the existing services without interruption.\n\n---\n\n### **Step-by-Step Strategy**\n\n#### **1. Plan the Migration**\n- **Define Boundaries**: Clearly delineate the user service's responsibilities (e.g., user authentication, data storage, APIs) from the rest of the monolith.\n- **Assess Dependencies**: Identify which services or components rely on the user service (e.g., payment gateway, authentication provider).\n\n#### **2. Deploy the New Service**\n- **Isolate the Service**: Deploy the user service as a separate service in the same environment (e.g., same Kubernetes cluster, cloud environment).\n- **Ensure Dependencies**: Make sure the new service has all required dependencies (e.g., databases, APIs, configuration files).\n\n#### **3. Configure Communication**\n- **Use a Service Mesh**: Deploy a service mesh (e.g., Istio, Linkerd) to manage traffic between the old and new services. The mesh can:\n  - Route traffic to the new service.\n  - Handle retries, circuit breaking, and load balancing.\n  - Enable health checks and telemetry.\n- **Reverse Proxy/Proxy Server**: Use a reverse proxy (e.g., Nginx, HAProxy) to act as a bridge between the old and new services. The proxy can:\n  - Route requests to the new service.\n  - Handle authentication and rate limiting.\n  - Monitor the new service's health.\n\n#### **4. Update Endpoints and Configurations**\n- **Service Discovery**: Configure the existing services to use a service discovery mechanism (e.g., Consul, Eureka) to dynamically route traffic to the new service.\n- **Endpoints**: Update the endpoints of the existing services to point to the new service's API. For example:\n  - If the old service calls `GET /users` and the new service has `GET /api/v1/users`, update the endpoint accordingly.\n- **Health Checks**: Ensure the new service is healthy and responsive, with proper health checks configured in the service mesh or proxy.\n\n#### **5. Test the Migration**\n- **Unit and Integration Tests**: Thoroughly test the new service and its interactions with the existing services.\n- **Load Testing**: Simulate traffic to ensure the new service can handle the load without downtime.\n- **Monitoring**: Set up monitoring to track the new service's performance and health.\n\n#### **6. Monitor and Maintain**\n- **Logging and Alerts**: Implement logging and alerts to monitor the new service and its communication with the existing services.\n- **Rollback Plan**: Have a rollback plan in case of issues during the migration.\n\n---\n\n### **Tools and Technologies**\n- **Service Mesh**: Istio, Linkerd\n- **Reverse Proxy**: Nginx, HAProxy\n- **Service Discovery**: Consul, Eureka, Kubernetes Service\n- **Orchestration**: Kubernetes (for containerized services)\n- **Monitoring**: Prometheus, Grafana, Datadog\n\n---\n\n### **Example Scenario**\nImagine the monolith has a user service that handles user authentication. To move it to a separate service:\n1. Deploy the user service in the same Kubernetes cluster.\n2. Configure the existing services (e.g., payment gateway) to route requests to the new user service via a reverse proxy.\n3. Use Istio to manage traffic routing, health checks, and circuit breaking.\n4. Test the migration by simulating traffic to ensure the new service handles requests without downtime.\n\n---\n\n### **Conclusion**\nBy using a service mesh and reverse proxy, the user service can be migrated without downtime. The key is to ensure seamless communication between the old and new services, with proper configuration of endpoints, service discovery, and health checks. This approach allows the monolith to remain operational while enabling the user service to be decoupled and scalable.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1"
+   ],
+   [
+    800,
+    "1"
+   ],
+   [
+    1200,
+    "1"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 5,
+  "category": "open",
+  "prompt": "Design an offline-first sync protocol for a mobile note-taking app, including conflict resolution.",
+  "finish": "stop",
+  "thinking_tokens": 1028,
+  "final": "### Offline-First Sync Protocol for Mobile Note-Taking App\n\n---\n\n#### **1. Sync Process**\n**Objective:** Ensure data consistency between local storage and the server, even when offline.\n\n**Steps:**\n1. **Local Data Storage:**\n   - Store notes in a local database (e.g., SQLite, in-memory map).\n   - Each note has a unique identifier (e.g., `note_id`), version number (`version`), timestamp (`timestamp`), and content (`content`).\n\n2. **Sync Trigger:**\n   - When the app detects an internet connection (e.g., via network state change), initiate a sync.\n\n3. **Sync Execution:**\n   - **Step 1:** Retrieve all local notes and their metadata (version, timestamp).\n   - **Step 2:** Send these notes to the server via a secure HTTP POST request.\n   - **Step 3:** The server checks for existing notes and compares their versions/timestamps.\n\n4. **Conflict Detection:**\n   - The server returns a list of notes that have been modified since the last sync.\n   - The app identifies conflicts by comparing local and server versions/timestamps.\n\n---\n\n#### **2. Conflict Detection**\n**Key Mechanisms:**\n- **Version Number:** Each note has a version number. Incremented on updates.\n- **Timestamp:** A timestamp is added to each note to track when it was last modified.\n- **Conflict Detection Logic:**\n  - If the server's version/timestamp is newer than the local copy, a conflict is detected.\n  - If the user's version/timestamp is newer, a conflict is also detected.\n\n**Example:**\n- Local note: `version=1, timestamp=1625000000`\n- Server note: `version=2, timestamp=1625000500`\n- Conflict detected: Server has a newer version.\n\n---\n\n#### **3. Conflict Resolution Strategies**\n**Objective:** Resolve conflicts by preserving user intent while ensuring data consistency.\n\n**Strategies:**\n1. **Overwrite (Replace):**\n   - If the server has a newer version, replace the local note.\n   - Example: User edits a note, server has a newer version → local note is overwritten.\n\n2. **Merge (Combine Changes):**\n   - If both local and server versions exist, merge changes while preserving original content.\n   - Example: User edits a note, server also edits it → combine changes into a single note.\n\n3. **Ask User (Choice):**\n   - Present options to the user:\n     - \"Keep my changes\"\n     - \"Keep the server's changes\"\n     - \"Merge both\"\n   - User selects the option, and the app applies the chosen resolution.\n\n4. **Atomic Transactions:**\n   - Ensure that sync operations are atomic (e.g., if a note is being updated, the app first checks the server's version and only applies changes if the server is not newer).\n\n---\n\n#### **4. Handling Server Unavailability**\n**Objective:** Maintain data integrity when the server is unreachable.\n\n**Steps:**\n1. **Local Data Preservation:**\n   - Store all local notes in a safe location (e.g., device storage).\n   - Do not attempt to sync with the server if it is unreachable.\n\n2. **User Notification:**\n   - Inform the user that the sync cannot proceed and suggest later syncing.\n   - Provide a \"Sync Later\" option.\n\n3. **Fallback Mechanisms:**\n   - If the server is unreachable for extended periods, the app can:\n     - Limit sync frequency to prevent data loss.\n     - Use a \"Sync Only When Available\" mode.\n\n---\n\n#### **5. Data Structure and Example**\n**Note Structure:**\n```json\n{\n  \"note_id\": \"note123\",\n  \"version\": 2,\n  \"timestamp\": 1625000500,\n  \"content\": \"This is a note with updates.\"\n}\n```\n\n**Server Response for Conflict:**\n```json\n{\n  \"notes\": [\n    {\n      \"note_id\": \"note123\",\n      \"version\": 2,\n      \"timestamp\": 1625000500\n    },\n    {\n      \"note_id\": \"note456\",\n      \"version\": 1,\n      \"timestamp\": 1625000300\n    }\n  ]\n}\n```\n\n---\n\n#### **6. Example Scenario**\n**Case 1: Server Has Newer Version**\n- User edits note `note123` (version 1).\n- Server sends note `note123` with version 2.\n- App detects conflict → Overwrite local note with server's version.\n\n**Case 2: User Has Newer Version**\n- User edits note `note123` (version 1).\n- Server sends note `note123` with version 2.\n- App detects conflict → Ask user to resolve (e.g., merge or overwrite).\n\n**Case 3: Server Unreachable**\n- App stores local notes and informs user to sync later.\n\n---\n\n#### **7. Key Considerations**\n- **Performance:** Optimize sync frequency to avoid excessive network traffic.\n- **User Experience:** Provide clear conflict resolution options to avoid confusion.\n- **Security:** Use HTTPS for syncing and ensure data is encrypted in transit.\n- **Backup:** Implement a local backup mechanism to prevent data loss.\n\n---\n\n### **Conclusion**\nThis protocol ensures the app remains functional offline, handles conflicts gracefully, and provides a seamless experience when syncing with the server. By leveraging version numbers, timestamps, and user choices, the app balances local autonomy with data consistency.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1"
+   ],
+   [
+    800,
+    "10"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 6,
+  "category": "open",
+  "prompt": "Plan logging and alerting for a small team running 20 services.",
+  "finish": "stop",
+  "thinking_tokens": 778,
+  "final": "To effectively manage logging and alerting for a small team with 20 services, a structured and scalable approach is essential. Below is a comprehensive plan:\n\n---\n\n### **1. Logging Infrastructure**\n**Objective:** Centralize logs, ensure consistency, and enable analysis.\n\n**Tools & Setup:**\n- **Centralized Logging:** Use **ELK Stack (Elasticsearch, Logstash, Kibana)** or **Splunk** for unified log management.\n  - **Logstash:** Configure inputs (e.g., syslog, files, APIs) and outputs (e.g., Elasticsearch, Splunk).\n  - **Elasticsearch:** Index logs with tags (e.g., service name, severity) for filtering.\n  - **Kibana:** Visualize logs, create dashboards, and set up alerts.\n- **Log Levels:** Define levels (debug, info, warning, error) and use tags for categorization.\n- **Log Rotation:** Automate rotation using Logstash or cron jobs to avoid overflow.\n\n**Best Practices:**\n- Use **JSON format** for logs for structured data.\n- Store logs in a **secure, encrypted location** (e.g., cloud storage with access controls).\n- Set up **log retention policies** (e.g., keep logs for 30 days).\n\n---\n\n### **2. Alerting System**\n**Objective:** Detect anomalies, trigger alerts, and notify the team promptly.\n\n**Tools & Setup:**\n- **Monitoring Tools:** Use **Prometheus + Grafana** for real-time metrics and alerts.\n  - **Prometheus:** Monitor service metrics (CPU, memory, errors, latency).\n  - **Grafana:** Visualize metrics, create dashboards, and set up alerts.\n- **Alerting Rules:** Define thresholds (e.g., error rate > 5%, service downtime > 5 minutes).\n- **Alerting Engine:** Use **Alertmanager** (part of Prometheus) to route alerts to multiple channels.\n\n**Best Practices:**\n- **Alert Frequency:** Set alerts to trigger only when critical thresholds are crossed.\n- **Notification Channels:** Use **Slack, email, or SMS** for alerts. Configure **multi-channel routing** (e.g., send email if Slack is unavailable).\n- **Alert Silencing:** Implement rules to silence alerts for known issues (e.g., \"Service A is down, but it's a known outage\").\n\n---\n\n### **3. Security & Compliance**\n**Objective:** Ensure logs and alerts are secure and compliant with policies.\n\n**Key Measures:**\n- **Access Control:** Use **IAM roles** (e.g., AWS IAM, Azure AD) to restrict access to logs and alerts.\n- **Encryption:** Encrypt logs in transit (e.g., TLS) and at rest (e.g., AWS S3 encryption).\n- **Audit Logs:** Maintain audit logs for access and alert actions.\n- **Compliance:** Ensure logs comply with regulations (e.g., GDPR, HIPAA) by retaining logs for required periods.\n\n---\n\n### **4. Monitoring & Automation**\n**Objective:** Continuously monitor logging and alerting systems for issues.\n\n**Tools & Setup:**\n- **Monitoring Tools:** Use **Datadog, New Relic, or Datadog** for comprehensive monitoring of logging and alerting systems.\n- **Auto-Scaling:** Set up auto-scaling for logging and alerting systems if using cloud infrastructure.\n- **Incident Management:** Use **Jira** or **PagerDuty** for incident tracking and escalation.\n\n---\n\n### **5. Team Collaboration & Documentation**\n**Objective:** Ensure clarity and efficiency in logging and alerting processes.\n\n**Best Practices:**\n- **Documentation:** Document logging formats, alert thresholds, and notification channels.\n- **Training:** Train team members on logging and alerting workflows.\n- **Version Control:** Use version control for logging configurations (e.g., Git for Logstash configs).\n\n---\n\n### **6. Example Workflow**\n1. **Log Collection:**\n   - Use Logstash to collect logs from 20 services (e.g., via syslog or files).\n   - Index logs in Elasticsearch with tags (e.g., \"service:api\", \"level:error\").\n\n2. **Alerting:**\n   - Set up Prometheus to monitor service metrics (e.g., error rate, latency).\n   - Configure Grafana to display dashboards and trigger alerts when thresholds are exceeded.\n\n3. **Notifications:**\n   - Alerts are sent to Slack (e.g., via **Webhook**), email, or SMS.\n   - Use **Alertmanager** to route alerts to multiple channels.\n\n4. **Monitoring:**\n   - Monitor the logging and alerting systems themselves (e.g., via Datadog or New Relic).\n   - Automate log rotation and alerting rules using cron jobs or CI/CD pipelines.\n\n---\n\n### **7. Cost & Scalability**\n- **Cost-Effective:** Use open-source tools (ELK, Prometheus, Grafana) instead of paid services.\n- **Scalability:** Design the system to handle 20 services by distributing logs and metrics across multiple nodes.\n\n---\n\n### **Tools Summary**\n| Category       | Tool/Toolset                          | Notes                                                                 |\n|----------------|----------------------------------------|-----------------------------------------------------------------------|\n| Logging        | ELK Stack, Logstash, Kibana, Splunk   | Centralized, scalable, supports tags and filtering                      |\n| Alerting       | Prometheus + Grafana + Alertmanager     | Real-time monitoring, customizable alerts                              |\n| Security       | IAM, TLS, Audit logs                  | Ensure logs and alerts are encrypted and accessible only to authorized users |\n| Monitoring     | Datadog, New Relic                    | Monitor logging and alerting systems for issues                        |\n\n---\n\n### **Final Notes**\n- **Simplicity:** Avoid overcomplicating the system. Focus on the most critical alerts and logs.\n- **Flexibility:** Use modular tools (e.g., separate logging and alerting systems) for easy scaling.\n- **Feedback Loop:** Continuously refine logging and alerting rules based on incident data.\n\nThis plan ensures the team can efficiently monitor and respond to issues in their 20 services while maintaining security and scalability.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "1"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 7,
+  "category": "open",
+  "prompt": "Design retries and idempotency for a consumer of payment webhooks.",
+  "finish": "stop",
+  "thinking_tokens": 954,
+  "final": "To ensure reliable and efficient handling of payment webhooks, a consumer system must implement **retries** and **idempotency** strategies. These mechanisms prevent duplicate processing, handle errors, and ensure robustness. Below is a structured approach:\n\n---\n\n### **1. Idempotency**\nIdempotency ensures that the same webhook is processed only once, even if received multiple times. Key practices:\n\n- **Unique Identifier**: Include a unique identifier (e.g., UUID, timestamp) in the webhook payload.\n  ```json\n  {\n    \"id\": \"abc123\",\n    \"payload\": { ... },\n    \"timestamp\": \"2023-10-05T12:34:56Z\"\n  }\n  ```\n- **Processed Tracking**: Store processed identifiers in a database or cache (e.g., Redis).\n  ```python\n  def handle_webhook(webhook):\n      if webhook.id in processed_ids:\n          return\n      # Process the webhook\n      processed_ids.add(webhook.id)\n  ```\n- **Validation**: Check for valid payload structure and content.\n  ```python\n  if not webhook.payload or not webhook.payload.amount:\n      log_error(\"Invalid payload\")\n      return\n  ```\n\n---\n\n### **2. Retries**\nImplement a retry mechanism to handle transient errors (e.g., network issues, invalid payloads) without duplicating processing.\n\n- **Retry Strategy**:\n  - **Exponential Backoff**: Double the delay between retries (e.g., 1s → 2s → 4s → 8s).\n  - **Max Retries**: Limit to 3 attempts (e.g., 3 retries with delays of 1s, 2s, 4s).\n  - **Timeout**: Set a timeout for processing (e.g., 10 seconds).\n- **Error Handling**:\n  ```python\n  retries = 3\n  for i in range(retries):\n      try:\n          process_webhook(webhook)\n          break\n      except Exception as e:\n          if i == retries - 1:\n              log_critical(\"Failed to process webhook\")\n          else:\n              wait(2 ** i seconds)\n  ```\n\n---\n\n### **3. Error Handling**\n- **Catch Specific Exceptions**: Handle errors like `NetworkError`, `InvalidPayload`, or `RateLimitExceeded`.\n- **Log Errors**: Log errors for debugging and monitoring.\n- **Mark as Failed**: For non-recoverable errors, mark the webhook as failed and skip processing.\n\n---\n\n### **4. Monitoring and Logging**\n- **Track Metrics**: Log retry counts, success/failure rates, and error types.\n- **Alerts**: Set up alerts for high retry counts or failed webhook events.\n\n---\n\n### **5. Configuration**\n- **Define Retry Limits**: Configure maximum retries and backoff intervals in the system configuration.\n- **Use Environment Variables**: Store sensitive values (e.g., retry limits) in environment variables.\n\n---\n\n### **6. Example Workflow**\n1. **Receive Webhook**: The consumer receives a webhook with a unique ID.\n2. **Check Idempotency**: Verify the ID is not already processed.\n3. **Validate Payload**: Ensure the payload is valid (e.g., amount, transaction ID).\n4. **Retry Logic**:\n   - If error occurs, retry with exponential backoff.\n   - After 3 retries, log failure and skip processing.\n5. **Process Webhook**: If successful, mark the ID as processed and store the result.\n\n---\n\n### **7. Best Practices**\n- **Rate Limiting**: Implement rate limiting to prevent overwhelming the system with webhook events.\n- **Deadlines**: Set timeouts for processing to avoid indefinite retries.\n- **Testing**: Test retries with mocks (e.g., simulate network errors) to ensure robustness.\n\n---\n\nBy combining idempotency and retries, the consumer ensures that payment webhooks are handled reliably, even in the face of transient errors or duplicate events. This approach balances performance, correctness, and fault tolerance.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "2"
+   ],
+   [
+    800,
+    "3"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 8,
+  "category": "choice",
+  "prompt": "A chat app needs per-conversation message ordering and 100k concurrent users. Which primary store fits best: PostgreSQL, Cassandra, or Redis? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 723,
+  "final": "To determine the best fit for a chat app requiring **per-conversation message ordering** and **100,000 concurrent users**, we must evaluate the strengths and limitations of the three options: **PostgreSQL**, **Cassandra**, and **Redis**.\n\n---\n\n### Key Requirements:\n1. **Message Ordering**: The app must ensure that messages are stored in the correct chronological order for each conversation.\n2. **High Concurrency**: 100,000 concurrent users imply a high volume of write operations.\n3. **Real-Time Messaging**: The system must handle fast writes and reads, with minimal latency.\n\n---\n\n### Evaluation of Each Option:\n\n#### **PostgreSQL**\n- **Strengths**: \n  - Strong ACID compliance, suitable for transactional data.\n  - Good for complex queries and structured data.\n- **Weaknesses**:\n  - **High Concurrency**: PostgreSQL struggles with high write throughput due to its relational model and locking mechanisms.\n  - **Ordering**: While it supports sequence generation, it is not efficient for large numbers of sequential IDs (e.g., 100,000+).\n  - **Latency**: Not ideal for real-time messaging due to its slower write and read performance compared to NoSQL systems.\n\n#### **Cassandra**\n- **Strengths**:\n  - **High Write Throughput**: Designed for handling large volumes of write operations.\n  - **Ordered Sequencing**: Supports **sequential IDs** (e.g., using `sequence` in the `system.local` table) for ordered data.\n  - **Horizontal Scaling**: Easily scales out to handle 100,000 concurrent users.\n  - **ACID Compliance**: While not as strict as PostgreSQL, it still maintains consistency for critical operations.\n- **Weaknesses**:\n  - Less flexible for complex queries compared to PostgreSQL.\n  - Not as good for real-time ordering if the sequence is not tightly controlled.\n\n#### **Redis**\n- **Strengths**:\n  - **High Speed**: Excellent for fast read/write operations, ideal for real-time messaging.\n  - **In-Memory**: Extremely fast for low-latency operations.\n- **Weaknesses**:\n  - **No ACID Compliance**: Not suitable for transactional data like message ordering.\n  - **Limited Ordering Capabilities**: While Redis can use sorted sets or lists for ordering, it is not optimized for large-scale, high-concurrency ordering scenarios.\n  - **Not Suitable for High Write Throughput**: Not ideal for handling 100,000 concurrent writes.\n\n---\n\n### Conclusion:\n\n- **PostgreSQL** is suitable for small to medium-scale applications with structured data and transactional integrity, but it struggles with high concurrency and ordering.\n- **Cassandra** is the best fit for a chat app with **high concurrency**, **ordered message storage**, and **large-scale data**. It supports efficient sequential ID generation and horizontal scaling, making it ideal for 100,000 concurrent users.\n- **Redis** is excellent for low-latency, real-time operations but not suitable for high-concurrency, ordered message storage scenarios.\n\n---\n\n$$\n\\boxed{\\text{Cassandra}}\n$$",
+  "final_boxed": "\\text{cassandra}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "cassandra"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 9,
+  "category": "choice",
+  "prompt": "A team of 3 is building an internal CRUD admin tool used by 20 people. Monolith or microservices? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 448,
+  "final": "When evaluating whether to adopt a monolithic or microservices architecture for a CRUD admin tool used by 20 people with a team of 3 developers, several factors must be considered:\n\n### Key Considerations:\n1. **Team Size and Development Efficiency**:\n   - A monolithic architecture allows the team to work on the entire application in a single codebase, which is efficient for a small team like the 3 developers. They can focus on the application without worrying about service boundaries or deployment complexity.\n   - Microservices, while potentially scalable, require more coordination and can increase the complexity of the development process, especially with fewer developers.\n\n2. **Scalability and Growth**:\n   - The tool is used by 20 people, but the question doesn't indicate that it's expected to scale significantly in the near future. A monolithic approach is simpler to deploy and maintain for current usage.\n   - If the tool were expected to grow or be distributed across multiple services, microservices might be more appropriate. However, with only 3 developers, this is unlikely to be a priority at this stage.\n\n3. **Complexity and Maintainability**:\n   - A monolithic application is easier to maintain and debug, especially for a small team. It avoids the overhead of managing multiple services, which can be complex and time-consuming.\n   - Microservices, while more flexible in the long term, introduce additional complexity in terms of service communication, data management, and deployment.\n\n4. **Current Use Case**:\n   - The tool is a single-purpose CRUD admin tool, which suggests a relatively simple and focused application. A monolithic approach aligns well with this use case, as it allows the team to build and maintain the application without unnecessary complexity.\n\n### Conclusion:\nGiven the team size, the current use case, and the lack of indication of future scalability, a **monolithic architecture** is more practical and efficient for the current development phase.\n\n$$\n\\boxed{monolith}\n$$",
+  "final_boxed": "monolith",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "monolith"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 10,
+  "category": "choice",
+  "prompt": "You need to run a nightly job that must not run twice concurrently across 5 servers. Use a database advisory lock, a cron entry on every server, or a message queue with 5 consumers? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1480,
+  "final": "To ensure that a nightly job runs **only once across 5 servers**, we need a mechanism that guarantees **concurrent execution control**. Among the options provided, the **database advisory lock** is the most effective and straightforward approach.\n\n---\n\n### Why the Database Advisory Lock Works\n\nThe database advisory lock uses a **database table** to manage the lock. Here’s how it works:\n\n1. **Acquire Lock**: When a job starts, it tries to acquire a lock on a specific row in a table.\n2. **Check Lock**: If the lock is available, the job proceeds.\n3. **Wait for Lock**: If the lock is already held by another job, the current job waits until the lock is released.\n4. **Release Lock**: Once the job is complete, it releases the lock, allowing other jobs to proceed.\n\nThis mechanism ensures that **only one job can be running at a time**, even across multiple servers. Since the lock is managed at the database level, it is **efficient and scalable** for this use case.\n\n---\n\n### Why the Other Options Are Less Suitable\n\n- **Cron Entries on Every Server**: While this could theoretically work, it requires **complex coordination** to prevent multiple cron jobs from running at the same time. It also introduces **potential race conditions** if not properly managed, and requires additional scripting or logic to prevent concurrent execution.\n\n- **Message Queue with 5 Consumers**: While this could theoretically work, it introduces **complexity in managing the queue and ensuring only one job runs at a time**. It also requires **additional infrastructure** to handle the message queue and consumers, and it's not as straightforward as the database advisory lock.\n\n---\n\n### Conclusion\n\nThe **database advisory lock** is the most efficient, reliable, and straightforward method for ensuring that a nightly job runs **only once across 5 servers**, even if multiple servers attempt to run it at the same time.\n\n$$\n\\boxed{\\text{database advisory lock}}\n$$",
+  "final_boxed": "\\text{databaseadvisorylock}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "database\\_advisory\\_lock"
+   ],
+   [
+    800,
+    "databaseadvisorylock"
+   ],
+   [
+    1200,
+    "databaseadvisorylock"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 11,
+  "category": "choice",
+  "prompt": "For storing user passwords, which is appropriate: SHA-256, bcrypt, or AES-256? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 414,
+  "final": "When choosing the appropriate algorithm for storing user passwords, it's important to consider the specific requirements of password hashing. Here's a breakdown of the three options:\n\n- **SHA-256**: While it is a cryptographic hash function, it is not designed for password hashing. It is not secure for this purpose due to its lack of built-in mechanisms for salt generation, work factor adjustment, and resistance to brute-force attacks. It is not suitable for password storage.\n\n- **bcrypt**: This is a **key derivation function (KDF)** specifically designed for password hashing. It is intentionally slow and includes features like **salt** and a **work factor** that increases over time. These features make it highly resistant to brute-force and rainbow table attacks. bcrypt is widely regarded as one of the most secure password hashing algorithms.\n\n- **AES-256**: This is a **symmetric encryption** algorithm, not a hashing algorithm. It is designed for confidentiality, not for password hashing. Using AES-256 for password storage would not be appropriate, as it lacks the necessary properties for secure password hashing (e.g., no built-in support for salt or work factor).\n\n### Conclusion:\nAmong the three, **bcrypt** is the most appropriate algorithm for storing user passwords due to its design for password hashing, including features like salt and work factor. The other two options are not suitable for this purpose.\n\n$$\n\\boxed{\\text{bcrypt}}\n$$",
+  "final_boxed": "\\text{bcrypt}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "bcrypt"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 12,
+  "category": "choice",
+  "prompt": "A mobile app must show a live-updating stock price every second. WebSocket, long polling, or a REST call every second? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1464,
+  "final": "To determine the best method for a mobile app that needs to show a live-updating stock price every second, we must evaluate the efficiency, simplicity, and suitability of **WebSocket**, **long polling**, and **REST calls** in the context of real-time, frequent data retrieval.\n\n---\n\n### Key Considerations:\n\n1. **WebSocket**:\n   - **Real-time communication**: It allows for bidirectional, low-latency communication.\n   - **Efficiency**: It is optimized for frequent data exchanges, as it maintains a single connection and avoids repeated HTTP requests.\n   - **Setup**: Requires the server to handle WebSocket connections and the client to establish a connection.\n   - **Pros**: Ideal for real-time data, efficient, and suitable for frequent updates.\n   - **Cons**: More complex to implement, requires server-side configuration.\n\n2. **Long Polling**:\n   - **Mechanism**: The client sends a request, and the server holds it until new data is available.\n   - **Efficiency**: Reduces the number of HTTP requests by waiting for a response before sending the next one.\n   - **Pros**: Less complex than WebSocket, avoids the overhead of maintaining a connection.\n   - **Cons**: May introduce latency, and the client must wait for the server to respond before sending the next request.\n\n3. **REST Calls**:\n   - **Mechanism**: Each request is independent; the client sends a request and waits for a response.\n   - **Efficiency**: Not optimized for real-time data, as each call adds overhead.\n   - **Pros**: Simple to implement, widely supported.\n   - **Cons**: Inefficient for frequent, real-time updates due to repeated requests and latency.\n\n---\n\n### App Requirements:\n- The app must retrieve the stock price **every second**.\n- The goal is to minimize latency and maximize efficiency.\n- The method should ideally allow for **instant updates** without waiting for the server to respond.\n\n### Evaluation:\n- **WebSocket** is the most suitable for real-time, low-latency communication. It allows the client to send a message every second and receive the data immediately.\n- **Long polling** is a viable alternative if a WebSocket server is not available or if simplicity is preferred, but it introduces latency and requires the client to wait for a response before sending the next request.\n- **REST calls** are inefficient for this use case due to repeated requests and increased overhead.\n\n---\n\n### Conclusion:\nAmong the three options, **WebSocket** is the most efficient and appropriate for real-time, frequent data retrieval. It provides the lowest latency and best performance for the given requirement.\n\n$$\n\\boxed{\\text{WebSocket}}\n$$",
+  "final_boxed": "\\text{websocket}",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "websocket"
+   ],
+   [
+    800,
+    "websocket"
+   ],
+   [
+    1200,
+    "websocket"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 13,
+  "category": "choice",
+  "prompt": "An e-commerce order table has 500M rows and queries always filter by customer_id and created_at. Index on (created_at, customer_id) or (customer_id, created_at)? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 3754,
+  "final": "To determine the optimal index for the e-commerce order table, we need to evaluate which composite index would be most effective for the given query pattern.\n\n---\n\n### **Query Pattern**\nThe queries always filter by **both** `customer_id` and `created_at`. This implies that the database will need to efficiently retrieve rows that satisfy both conditions.\n\n---\n\n### **Index Considerations**\n\nA composite index is effective when the query conditions involve **multiple columns** and the columns are **selectively distributed** (i.e., have high uniqueness or low duplicates). The index should be ordered to prioritize the column(s) that are **more selective** in the query.\n\n- **Index Order**: The database uses the index in the order of the columns listed in the index.\n- **Efficiency**: The index is used if the first column in the index matches the query condition. If the first column is not selective, the database will check the next column.\n\n---\n\n### **Comparative Analysis**\n\n| Index Order | Column 1 | Column 2 | Selectivity |\n|-------------|-----------|-----------|-------------|\n| (created_at, customer_id) | created_at | customer_id | ? |\n| (customer_id, created_at) | customer_id | created_at | ? |\n\n- If **created_at** is **more selective** (i.e., has many unique values), then the index `(created_at, customer_id)` is more efficient. This way, the database can quickly narrow down based on `created_at` and then check `customer_id`.\n- If **customer_id** is more selective, then the index `(customer_id, created_at)` is better, as it allows the database to filter on `customer_id` first.\n\n---\n\n### **Conclusion**\n\nGiven that the query always filters on **both** `customer_id` and `created_at`, the best index order is the one that aligns with the **most selective column** in the query. However, since the problem does **not** specify the distribution of the values in these columns, we must **assume** the most likely scenario.\n\nIn practice, **created_at** is typically more selective than `customer_id` in a typical e-commerce order table (due to the nature of timestamps and the frequency of order creation). Therefore, the **index `(created_at, customer_id)`** is more efficient for this query pattern.\n\n---\n\n### ✅ Final Answer:\n$$\n\\boxed{(created_at, customer_id)}\n$$",
+  "final_boxed": "(created_at,customer_id)",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    800,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    1200,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    1600,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    2000,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    2400,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    2800,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    3200,
+    "(\\text{created_at},\\text{customer_id})"
+   ],
+   [
+    3600,
+    "(\\text{created_at},\\text{customer_id})"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 14,
+  "category": "choice",
+  "prompt": "To share configuration secrets between 30 services, use environment variables baked into images, a secrets manager, or a shared Git repo? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 482,
+  "final": "To securely manage configuration secrets across multiple services, the most effective approach is to use a **secrets manager**. This solution offers several key advantages:\n\n- **Centralized Management**: A secrets manager allows you to store and manage secrets in a single, secure location, making it easier to rotate, retrieve, and distribute secrets across multiple services.\n- **Security**: Secrets managers typically provide encryption at rest and in transit, ensuring that sensitive data is protected both in storage and during transmission.\n- **Scalability**: With 30 services, using a secrets manager ensures that each service can access the necessary secrets without exposing them in the image files or environment variables.\n- **Simplified Management**: It avoids the complexity of managing environment variables across multiple images or maintaining a shared Git repository, which can become unwieldy and insecure.\n\nWhile environment variables baked into images might work for a small number of services, they become impractical and less secure when scaled to 30 services. A shared Git repository is also not ideal due to the risk of exposing secrets if the repository is not properly secured.\n\n$$\n\\boxed{secrets manager}\n$$",
+  "final_boxed": "secretsmanager",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "secretsmanager"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 15,
+  "category": "choice",
+  "prompt": "A search box should query the backend as the user types. Debounce, throttle, or query on every keystroke? End your answer with only the choice in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 481,
+  "final": "To efficiently handle a search box that queries the backend as the user types, we need to balance between responsiveness and performance. If we **query on every keystroke**, the backend would be called for every character typed, which could lead to excessive requests, especially if the user types quickly. This could result in slow performance or server overload.\n\nOn the other hand, **debounce** is a strategy where the function is only triggered after the user has stopped typing for a certain period. This reduces the number of requests by waiting until the user has finished typing before sending the query. It's ideal for scenarios where the user's input is continuous but we want to minimize the number of times the backend is called.\n\n**Throttle** is different—it triggers the function at fixed intervals, regardless of the user's input. While it can also reduce the number of requests, it doesn't account for the user's input speed and may not be as efficient as debounce.\n\nThus, the most appropriate approach is to use **debounce** to optimize the number of backend queries while maintaining responsiveness.\n\n$$\n\\boxed{debounce}\n$$",
+  "final_boxed": "debounce",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "debounce"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 16,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def average(xs):\n2     total = 0\n3     for x in xs:\n4         total += x\n5     return total / len(xs) + 1\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 782,
+  "final": "To identify the line with the bug in the provided Python code, let's analyze the function step by step.\n\n---\n\n### Function Definition\n```python\n1 def average(xs):\n2     total = 0\n3     for x in xs:\n4         total += x\n5     return total / len(xs) + 1\n```\n\n---\n\n### Step-by-Step Analysis\n\n1. **Line 1**: `def average(xs):`  \n   - This defines a function called `average` that takes a single argument `xs`.\n   - **No bug here.**\n\n2. **Line 2**: `total = 0`  \n   - Initializes a variable `total` to 0, which is correct for accumulating the sum of the list elements.\n   - **No bug here.**\n\n3. **Line 3**: `for x in xs:`  \n   - A loop that iterates over each element in the list `xs`, and adds each element to `total`.\n   - This is correct and essential for computing the sum.\n   - **No bug here.**\n\n4. **Line 4**: `total += x`  \n   - This line is equivalent to `total = total + x`, which is correct and necessary for accumulating the sum.\n   - **No bug here.**\n\n5. **Line 5**: `return total / len(xs) + 1`  \n   - This line computes the average by dividing the total by the length of the list and then adds 1.\n   - **This is incorrect** because the correct formula for the average is simply `total / len(xs)`, not `total / len(xs) + 1`.\n\n---\n\n### Bug Explanation\n\nThe bug lies in **line 5**, where the code adds 1 to the computed average. This is **not a standard formula** for computing the average of a list. If the intention was to compute the average, the correct expression would be:\n\n```python\nreturn total / len(xs)\n```\n\nAdding 1 is a **non-standard and incorrect modification**, and it introduces a bug in the function's behavior. It also leads to undefined behavior when the list is empty (since `len(xs)` would be 0, and dividing by zero would crash).\n\n---\n\n### Final Answer\n\nThe line with the bug is:\n\n$$\n\\boxed{5}\n$$",
+  "final_boxed": "5",
+  "gold": "5",
+  "probes": [
+   [
+    400,
+    "4"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 17,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def is_palindrome(s):\n2     s = s.lower()\n3     for i in range(len(s)):\n4         if s[i] != s[len(s) - i]:\n5             return False\n6     return True\nEnd your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 5035,
+  "final": "To identify the line with the bug in the given Python function `is_palindrome(s)`, let's analyze the code carefully.\n\n---\n\n### **Function Overview**\n\nThe function is supposed to determine whether a given string is a **palindrome**, meaning it reads the same forwards and backwards. The key steps in the function are:\n\n1. Convert the string to lowercase.\n2. Iterate over the characters from the start and end of the string.\n3. Compare corresponding characters.\n4. Return `False` if any pair is not equal, otherwise return `True`.\n\n---\n\n### **Bug Analysis**\n\nIn line 4:\n```python\nif s[i] != s[len(s) - i]:\n```\n\nThis line compares the character at position `i` with the character at position `len(s) - i`. However, this is **not valid** for all possible values of `i`.\n\n---\n\n### **Problem**\n\nLet’s consider the **range** of `i`:\n\n```python\nfor i in range(len(s)):\n```\n\nThis means `i` runs from `0` to `len(s) - 1`. So for each `i`, `len(s) - i` is:\n\n- For `i = 0`: `len(s) - 0 = len(s)`\n- For `i = 1`: `len(s) - 1`\n- ...\n- For `i = len(s) - 1`: `len(s) - (len(s) - 1) = 1`\n\nThis means that `len(s) - i` can be **greater than or equal to the length of the string**, which is **out of bounds** for `s`.\n\nFor example:\n- If `s = \"a\"`, then `len(s) = 1`, and `s[1]` is **out of bounds**.\n- If `s = \"ab\"`, then `s[2]` is also out of bounds.\n\nThis leads to a **`IndexError`** when the code tries to access `s[len(s) - i]`.\n\n---\n\n### **Conclusion**\n\nThe **bug** lies in **line 4**, where the code accesses `s[len(s) - i]`. This index is **out of bounds** for all non-empty strings, leading to a crash or incorrect behavior.\n\n---\n\n### ✅ Final Answer\n\n$$\n\\boxed{4}\n$$",
+  "final_boxed": "4",
+  "gold": "4",
+  "probes": [
+   [
+    400,
+    "4"
+   ],
+   [
+    800,
+    "4"
+   ],
+   [
+    1200,
+    "4"
+   ],
+   [
+    1600,
+    "4"
+   ],
+   [
+    2000,
+    "4"
+   ],
+   [
+    2400,
+    "4"
+   ],
+   [
+    2800,
+    "4"
+   ],
+   [
+    3200,
+    "4"
+   ],
+   [
+    3600,
+    "4"
+   ],
+   [
+    4000,
+    "4"
+   ],
+   [
+    4400,
+    "4"
+   ],
+   [
+    4800,
+    "4"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 18,
+  "category": "code",
+  "prompt": "What does this print?\nx = [1, 2, 3]\ny = x\ny.append(4)\nprint(len(x))\nEnd your answer with the number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 377,
+  "final": "To determine what the code prints, let's analyze the code step by step:\n\n1. **Initial Assignment:**\n   ```python\n   x = [1, 2, 3]\n   ```\n   Here, the list `x` is initialized with the values `[1, 2, 3]`.\n\n2. **Assignment of Reference:**\n   ```python\n   y = x\n   ```\n   This line assigns the same list reference to both `x` and `y`. So, both variables point to the same list.\n\n3. **Appending to the List:**\n   ```python\n   y.append(4)\n   ```\n   This line adds the value `4` to the list that `y` references, which is the same list that `x` references. Therefore, the list `x` is also modified.\n\n4. **Printing the Length:**\n   ```python\n   print(len(x))\n   ```\n   After the append operation, the list `x` contains `[1, 2, 3, 4]`. The length of this list is `4`, so the print statement outputs `4`.\n\n---\n\n### Final Answer:\n$$\n\\boxed{4}\n$$",
+  "final_boxed": "4",
+  "gold": "4",
+  "probes": [],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 19,
+  "category": "code",
+  "prompt": "Which line has the bug?\n1 def find_max(xs):\n2     best = 0\n3     for x in xs:\n4         if x > best:\n5             best = x\n6     return best\n(xs may contain only negative numbers.) End your answer with the line number in \\boxed{}.",
+  "finish": "stop",
+  "thinking_tokens": 1267,
+  "final": "To identify the line with the bug in the given Python function, let's analyze the code step by step.\n\n---\n\n### Function Overview\n\nThe function `find_max(xs)` is intended to find the **maximum value** in the list `xs`. It starts with `best = 0` and then iterates over each element in `xs`, updating `best` whenever a larger value is found.\n\n---\n\n### Problem Analysis\n\n- **Line 2**: `best = 0`  \n  This line sets the initial value of `best` to `0`. However, if the list `xs` contains **only negative numbers**, the function will **never update `best`** during the loop because all elements are less than `0`. As a result, the function will **return `0`**, which is **incorrect**.\n\n  For example:\n  - If `xs = [-5, -3]`, the function returns `0` instead of `-3`, which is the correct maximum.\n  - If `xs = [-1]`, the function also returns `0` instead of `-1`.\n\n- **Line 4**: `for x in xs:`  \n  This line is correct; it loops through the elements of `xs`.\n\n- **Other lines**:  \n  - Line 3: `if x > best:` is correct, as it checks whether the current element is greater than the current `best`.\n  - Line 5: `best = x` is correct, as it updates `best` when a larger value is found.\n\n---\n\n### Conclusion\n\nThe **bug lies in Line 2** because the initial value of `best` is set to `0`, which is incorrect for lists containing **only negative numbers**. The function returns `0` instead of the correct maximum value, which is the least negative number in the list.\n\n---\n\n### Final Answer\n\n$$\n\\boxed{2}\n$$",
+  "final_boxed": "2",
+  "gold": "2",
+  "probes": [
+   [
+    400,
+    "2"
+   ],
+   [
+    800,
+    "2"
+   ],
+   [
+    1200,
+    "2"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 20,
+  "category": "open",
+  "prompt": "월 100만 명이 쓰는 쿠폰 발급 시스템에서 같은 사용자에게 쿠폰이 중복 발급되지 않도록 하는 설계를 제안해줘.",
+  "finish": "stop",
+  "thinking_tokens": 4873,
+  "final": "월 100만 명이 쓰는 쿠폰 발급 시스템에서 사용자별 쿠폰 중복 발급을 방지하기 위한 설계는 다음과 같이 구성할 수 있습니다:\n\n---\n\n### **1. 핵심 설계 요소**\n- **쿠폰 발급 기록 추적**: 사용자별 쿠폰 발급 내역을 추적하여 중복 방지.\n- **사용자 쿠폰 상태 관리**: 사용자가 이미 받은 쿠폰을 기록하여 중복 발급을 막음.\n- **쿠폰 유효 기간 관리**: 쿠폰의 유효 기간을 기준으로 발급 여부를 확인.\n\n---\n\n### **2. 데이터 테이블 설계**\n\n#### **(1) 쿠폰 테이블 (coupons)**\n| 컬럼명              | 설명                            |\n|---------------------|---------------------------------|\n| coupon_id            | 쿠폰 고유 식별자                 |\n| issuer_id            | 쿠폰 발급자 (예: 계정 ID)          |\n| expiration_date      | 쿠폰 유효 기한 (날짜/시간 형식)     |\n| status               | 쿠폰 상태 (예: 'issued', 'claimed', 'expired') |\n\n#### **(2) 사용자 쿠폰 관리 테이블 (user_coupons)**\n| 컬럼명              | 설명                            |\n|---------------------|---------------------------------|\n| user_id              | 사용자 고유 식별자               |\n| coupon_id            | 쿠폰 고유 식별자                 |\n| issued_at            | 쿠폰 발급 날짜/시간               |\n| status               | 쿠폰 상태 (예: 'issued', 'claimed') |\n\n---\n\n### **3. 설계 로직**\n\n#### **(1) 쿠폰 발급 시**\n- 사용자가 이미 쿠폰을 받았는지 확인 (사용자 쿠폰 테이블 검사).\n- **중복 발급 방지 로직**:\n  - 사용자가 이미 쿠폰을 받은 경우: 발급 거부.\n  - 사용자가 쿠폰을 받지 않은 경우: 쿠폰을 발급하고, 사용자 쿠폰 테이블에 기록.\n\n#### **(2) 쿠폰 사용 시**\n- 사용자가 이미 쿠폰을 받은 경우: 발급 거부.\n- 사용자가 쿠폰을 받지 않은 경우: 쿠폰을 발급하고, 사용자 쿠폰 테이블에 기록.\n\n#### **(3) 쿠폰 유효 기간 관리**\n- 쿠폰의 유효 기간이 지过后, 사용자 쿠폰 테이블에서 해당 쿠폰을 제거.\n- **예시**:\n  - 쿠폰 발급 시 `issued_at` 기록.\n  - 쿠폰 유효 기간이 지过后, `expiration_date` 기준으로 쿠폰을 제거.\n\n---\n\n### **4. 최적화 및 성능 고려**\n- **효율적인 데이터 구조**: 쿠폰과 사용자 간의 관계를 효율적으로 관리 (예: Hash Table 또는 Set).\n- **캐시 활용**: 사용자 쿠폰 상태를 캐시하여 빠른 검색 가능.\n- **분산 데이터베이스**: 고대량 사용자 및 쿠폰 수에 대응하기 위해 분산 구조 사용.\n\n---\n\n### **5. 예시 코드 (SQL)**\n```sql\n-- 쿠폰 발급 시\nINSERT INTO user_coupons (user_id, coupon_id, issued_at)\nVALUES (?, ?, NOW());\n\n-- 쿠폰 사용 시\nSELECT * FROM user_coupons WHERE user_id = ? AND coupon_id = ? AND status = 'issued';\n```\n\n---\n\n### **6. 결론**\n이 설계는 쿠폰 중복 발급을 방지하기 위해 **쿠폰 발급 기록 추적**과 **사용자 쿠폰 상태 관리**를 통해 구현됩니다. 사용자별 쿠폰 상태를 추적하고, 유효 기간을 기준으로 발급 여부를 확인하여, **중복 발급을 막는 데 효과적**입니다. 또한, 분산 데이터베이스와 캐시를 활용하여 성능을 최적화할 수 있습니다.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "100000"
+   ],
+   [
+    800,
+    "100000"
+   ],
+   [
+    1200,
+    "100000"
+   ],
+   [
+    1600,
+    "100000"
+   ],
+   [
+    2000,
+    "100000"
+   ],
+   [
+    2400,
+    "100000"
+   ],
+   [
+    2800,
+    "1"
+   ],
+   [
+    3200,
+    "1"
+   ],
+   [
+    3600,
+    "1"
+   ],
+   [
+    4000,
+    "1"
+   ],
+   [
+    4400,
+    "1"
+   ],
+   [
+    4800,
+    "1"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 21,
+  "category": "open",
+  "prompt": "사내 게시판 서비스의 검색 기능을 설계해줘. 게시글은 약 50만 건이고 한국어 검색이 중요해.",
+  "finish": "stop",
+  "thinking_tokens": 1045,
+  "final": "### 사내 게시판 검색 기능 설계 방안\n\n#### 1. **사용자 요구사항**\n- **데이터 개수**: 약 50만 건의 게시글\n- **언어**: 한국어 검색 강조\n- **기능**: 전체 텍스트 검색, 필터링, 정렬, 예측 검색, 정확도 최적화\n- **사용자 경험**: 직관적인 인터페이스, 빠른 성능, 유용한 검색 결과\n\n---\n\n#### 2. **기술 기반 설계**\n\n##### (1) **검색 엔진 선택**\n- **사용**: **Elasticsearch** (모바일 기반 대규모 데이터 처리, 실시간 검색, 정렬, 필터링)\n- **기능**:\n  - Full-text search (제목, 내용, 태그 등)\n  - Faceting (날짜, 카테고리, 태그 필터링)\n  - Sorting (정렬 기능)\n  - Query DSL (검색 조건 정의)\n\n##### (2) **데이터 인덱싱 전략**\n- **필드**: 제목, 내용, 태그, 작성일, 조회수, 사용자 ID\n- **Tokenization**:\n  - **Korean Language Tokenizer**: `korean` 키워드 사용 (예: `이름`, `회사`, `제품`)\n  - **Stemming**: `회사` → `회사`, `회사에` → `회사`\n- **Indexing**:\n  - **Mapping**: `text` 타입으로 텍스트 저장, `keyword` 타입으로 카테고리/태그 저장\n  - **Mapping Optimization**: `match` 필드 사용 (필터링 기능)\n\n##### (3) **검색 기능 구현**\n\n###### (a) **검색 조건 처리**\n- **검색 키워드 처리**:\n  - **한국어 토큰화**: `이름` → `이름`, `회사` → `회사`, `회사에` → `회사`\n  - **Stemming**: `회사` → `회사`, `회사에` → `회사`\n  - **Wildcard**: `*` → `회사`, `*회사*` → `회사`, `*에*` → `회사에`\n  - **Boolean Operators**: `AND`, `OR`, `NOT` (예: `회사 AND (제품 OR 브랜드)`)\n- **검색 타입**:\n  - **Exact Match**: `회사`\n  - **Prefix**: `회사에`\n  - **Suffix**: `회사`\n  - **Wildcard**: `*회사*`\n\n###### (b) **정렬 및 필터링**\n- **정렬 기준**:\n  - **Relevance Score**: TF-IDF 또는 BM25 (한국어 텍스트의 중요도 계산)\n  - **Date**: 작성일 기준 정렬\n  - **View Count**: 조회수 기준 정렬\n- **필터링 기능**:\n  - **카테고리**: `IT`, `관리`, `홍보`\n  - **태그**: `제품`, `브랜드`, `공지`\n  - **날짜**: `2023-01-01` ~ `2024-01-01`\n\n##### (4) **사용자 경험 설계**\n\n###### (a) **검색 인터페이스**\n- **검색 필터**:\n  - **검색 키워드 입력**: `회사`, `제품`, `홍보`\n  - **예측 검색**: 키워드 입력 시 자동으로 예측 결과 표시 (예: `회사` → `회사`, `회사에` → `회사`)\n  - **검색 결과 표시**:\n    - **Top 10**: 가장 관련된 10개 게시글\n    - **필터 적용**: 카테고리, 태그, 날짜 선택\n    - **정렬 기준 선택**: 관련도, 조회수, 작성일\n\n###### (b) **검색 성능 최적화**\n- **Caching**: 검색 결과 캐싱 (예: 최근 10개 검색 키워드)\n- **Query Optimization**:\n  - **Indexing Strategy**: `text` 타입 사용\n  - **Query Parsing**: 검색 조건을 `Query DSL`로 처리\n  - **Query Execution**: Elasticsearch의 `search` API 사용\n\n##### (5) **보안 및 성능**\n\n###### (a) **보안**\n- **사용자 인증**: 로그인 후 검색 기능 사용\n- **SQL Injection 방지**: 검색 키워드를 `Query DSL`로 처리 (예: `POST` 키워드 사용)\n- **Rate Limiting**: 검색 요청 수 제한 (예: 100 건/분)\n\n###### (b) **성능**\n- **데이터 분산**: 데이터베이스 분산 (예: Elasticsearch의 `shard` 설정)\n- **캐시**: 검색 결과 캐시 (예: `search` API의 `cache` 설정)\n- **성능 테스트**: 50만 건의 데이터를 1초 이내에 검색 가능\n\n---\n\n#### 3. **실무 구현 예시**\n\n```python\n# 예: Elasticsearch 검색 조건 설정\nfrom elasticsearch import Elasticsearch\n\ndef search_posts(query):\n    es = Elasticsearch()\n    query = {\n        \"query\": {\n            \"multi_match\": {\n                \"query\": query,\n                \"fields\": [\"제목\", \"내용\", \"태그\"]\n            }\n        },\n        \"size\": 10\n    }\n    return es.search(index=\"게시판_데이터\", body=query)\n```\n\n---\n\n#### 4. **결론**\n- **검색 기능**: Elasticsearch 기반, 한국어 토큰화, Stemming, Wildcard, Boolean Operator 지원\n- **성능**: 캐싱, 분산, 쿼리 최적화\n- **사용자 경험**: 예측 검색, 필터 적용, 정렬 기준 선택\n- **보안**: 사용자 인증, SQL Injection 방지\n\n이 설계는 50만 건의 게시판 데이터를 빠르고 정확하게 검색할 수 있도록 구현되며, 한국어 특화 기능을 포함한 최적의 검색 경험 제공.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "100"
+   ],
+   [
+    800,
+    "10"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 22,
+  "category": "choice",
+  "prompt": "하루 주문 1천 건인 쇼핑몰의 재고 차감을 구현하려고 해. 비관적 락, 낙관적 락, 분산 락(Redis) 중 무엇이 적합할까? 답의 마지막에 선택지 하나만 \\boxed{} 안에 써줘.",
+  "finish": "stop",
+  "thinking_tokens": 741,
+  "final": "하루 1,000 건의 주문을 처리하는 쇼핑몰의 재고 차감에 적합한 락 메커니즘은 **낙관적 락 (Optimistic Lock)**이 가장 적합합니다. \n\n**이유**:  \n1. **낙관적 락**은 데이터를 실제로 수정하기 전에 충돌 검사를 수행하여 제동 없이 처리합니다. 이는 고대응도 환경에서 성능을 최적화할 수 있으며, 1,000 건의 주문이 동시에 발생하는 경우에도 락의 경쟁을 줄일 수 있습니다.  \n2. **비관적 락**은 모든 트랜잭션 시작 전에 락을 획득하므로, 고대응도 환경에서는 높은 경쟁률과 대기 시간을 초래할 수 있습니다.  \n3. **Redis 락**은 분산 시스템에서 사용되지만, 락 획득 시도 중 오류 발생 시 재시도를 지원하며, 고대응도 환경에서도 적합하지만, 구현 복잡도가 높아 경쟁력이 약간 떨어질 수 있습니다.  \n\n**결론**:  \n**낙관적 락 (Optimistic Lock)**은 고대응도 환경에서 성능 최적화를 위해 가장 적합합니다.\n\n\\boxed{optimistic lock}",
+  "final_boxed": "optimisticlock",
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "optimisticlock"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ },
+ {
+  "i": 23,
+  "category": "open",
+  "prompt": "레거시 PHP 서비스를 Kotlin 백엔드로 점진적으로 옮기는 전략을 세워줘.",
+  "finish": "stop",
+  "thinking_tokens": 830,
+  "final": "레거시 PHP 서비스를 Kotlin 백엔드로 점진적으로 옮기는 전략은 **유연성, 테스트, 보안, 성능**을 고려해 체계적으로 진행해야 합니다. 아래 단계별 전략을 구체적으로 설명합니다.\n\n---\n\n### **1. 프로젝트 분석 및 전략 수립**\n- **PHP 서비스 상태 점검**:  \n  - 기존 코드의 구조, 의존성, 데이터베이스(schema), API 설계 등을 분석합니다.  \n  - PHP의 단순한 프로cedural 코드, 비정형 데이터, 불안정한 의존성은 주요 고려 사항입니다.  \n  - 주요 기능(예: 사용자 관리, 데이터 처리, API 엔드포인트)을 분리하여 단계별로 옮기기.\n\n- **Kotlin 전략 정의**:  \n  - **API 구조 유지**: PHP의 REST API를 그대로 유지하여 편의성 유지.  \n  - **데이터 모델링**: PHP의 데이터베이스(schema)를 Kotlin의 ORM(예: Kotlin의 Ktor ORM, JPA)에 맞게 변환.  \n  - **프레임워크 선택**:  \n    - **Spring Boot** 또는 **Kotlin Multiplatform**을 기반으로 개발.  \n    - **Ktor**를 사용하여 HTTP 서비스 구조 유지.  \n  - **보안**: Spring Security 또는 Kotlin의 암호화 기능을 활용하여 PHP의 보안 취약점 대응.\n\n---\n\n### **2. 단계별 옮기기 전략**\n#### **Phase 1: API 및 데이터 모델링**\n- **API 설계**:  \n  - PHP의 API 엔드포인트를 Kotlin의 `@RestController` 또는 `@PostMapping` 등을 기반으로 구현.  \n  - JSON 포맷을 유지하여 편의성 확보.  \n- **데이터 모델링**:  \n  - PHP의 데이터베이스(schema)를 Kotlin의 `@Entity` 또는 `@Data` annotation으로 변환.  \n  - 예:  \n    ```java\n    @Entity\n    data class User(\n        @Id\n        val id: Int,\n        val name: String,\n        val email: String\n    )\n    ```\n\n#### **Phase 2: 기능별 옮기기**\n- **사용자 관리**:  \n  - PHP의 `UserController`를 Kotlin의 `UserController`로 옮기며, 기존의 `POST /users` 엔드포인트를 유지.  \n- **데이터 처리**:  \n  - PHP의 `DataProcessor`를 Kotlin의 `DataProcessor`로 옮기며, `@Service`로 분리.  \n  - 비동기 처리: Kotlin의 `async` 기능 또는 `Coroutine` 사용.\n\n#### **Phase 3: 테스트 및 보증**\n- **테스트 전략**:  \n  - PHP의 기존 테스트 코드를 Kotlin의 JUnit 또는 TestNG로 변환.  \n  - **Integration Test**:  \n    - PHP의 API를 테스트할 때, Kotlin의 `Mockito` 또는 `Mockito-Kotlin`을 사용하여 시나리오 재현.  \n- **테스트 케이스**:  \n  - 주요 기능(예: 사용자 생성, 데이터 검증)에 대한 테스트를 확장.\n\n#### **Phase 4: 성능 및 보안 최적화**\n- **성능 향상**:  \n  - Kotlin의 빠른 실행 속도와 비동기 처리 기능을 활용.  \n  - 데이터 전송 최적화: JSON 포맷을 사용하여 효율적인 데이터 전송.  \n- **보안 강화**:  \n  - Spring Security를 사용하여 인증/인가 처리.  \n  - 데이터 암호화(예: AES)를 적용하여 민감한 데이터 보호.\n\n---\n\n### **3. 구현 시 고려 사항**\n- **코드 유연성**:  \n  - Kotlin의 `fun` 또는 `data class`를 사용하여 코드의 유연성 유지.  \n  - `nullable` 타입을 활용하여 NULL 처리를 효율적으로 관리.  \n- **디버깅 및 로깅**:  \n  - Kotlin의 `Logger` 또는 `SLF4J`를 사용하여 로그 기능 확장.  \n  - 디버깅 도구(예: IntelliJ IDEA, VS Code)를 활용한 코드 추적.  \n- **디버깅 케이스**:  \n  - PHP의 비동기 처리를 Kotlin의 `Coroutine`으로 변환하여 디버깅 편의성 확보.\n\n---\n\n### **4. 배포 및 유지보수**\n- **단계적 배포**:  \n  - 기존 PHP 서비스와 Kotlin 서비스를 병행하여 배포.  \n  - 배포 후 API 테스트를 진행하여 오류 검출.  \n- **유지보수**:  \n  - Kotlin의 코드를 PHP의 코드와 비교하여 개선점 확보.  \n  - 기존 PHP의 보안 취약점 대응을 Kotlin의 보안 기능으로 대체.\n\n---\n\n### **5. 예시 흐름**\n1. **Phase 1**: API 및 데이터 모델링  \n   - `UserController` 및 `DataProcessor` 생성.  \n2. **Phase 2**: 사용자 관리 기능 옮기기  \n   - `POST /users` 엔드포인트 구현.  \n3. **Phase 3**: 테스트 및 성능 향상  \n   - JUnit 테스트 및 쓰레드 처리 최적화.  \n4. **Phase 4**: 배포 및 유지보수  \n   - PHP와 Kotlin 서비스 병행 배포.  \n\n---\n\n### **6. 주요 도구 및 툴**\n- **코드 테스트**: JUnit, TestNG, Mockito-Kotlin  \n- **데이터 모델링**: Kotlin의 `@Entity`, `@Data`  \n- **API 테스트**: Postman, curl, Swagger/OpenAPI  \n- **프레임워크**: Spring Boot, Ktor, Kotlin Multiplatform  \n- **디버깅**: IntelliJ IDEA, VS Code, Logback  \n\n---\n\n### **7. 결론**\n- **전략**: 단계별 옮기기, API 구조 유지, 테스트 강화, 성능 최적화.  \n- **핵심**: Kotlin의 강점(형태 안정성, 비동기 처리, 보안)을 최대화하여 PHP의 단순성과 기존 시스템의 연계성을 유지.  \n\n이 전략을 통해 PHP 서비스를 점진적으로 Kotlin으로 옮되, 품질과 성능을 유지할 수 있습니다.",
+  "final_boxed": null,
+  "gold": null,
+  "probes": [
+   [
+    400,
+    "10"
+   ],
+   [
+    800,
+    "10"
+   ]
+  ],
+  "auto_stop": null,
+  "auto_answer": null,
+  "auto_boxed": null
+ }
+]
