@@ -190,7 +190,7 @@ def main() -> None:
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--eligible", type=int, default=10)
-    parser.add_argument("--max-screen", type=int, default=60)
+    parser.add_argument("--max-screen", type=int, default=200)
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--analyze", action="store_true")
     args = parser.parse_args()
